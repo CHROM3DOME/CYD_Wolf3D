@@ -1,0 +1,20 @@
+# PlatformIO build products and downloaded toolchains
+.pio/
+.platformio-core/
+.platformio-python/
+platformio_cli/
+
+# Local wheel/runtime workarounds
+vendor/
+
+# Machine-local launchers (contain local runtime paths)
+pio.ps1
+upload.ps1
+monitor.ps1
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.user
+Thumbs.db
+.DS_Store
