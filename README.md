@@ -9,6 +9,7 @@ A simple hardware checkout program for the Elegoo/CYD-style ESP32 display board.
 - PWM backlight fade
 - chip, flash, heap, and PSRAM information
 - Wi-Fi network scan
+- SD-based MJPEG video decode and WAV playback
 - automatic run of every test
 
 ## Build and upload
@@ -20,7 +21,17 @@ pio run -t upload
 pio device monitor
 ```
 
-The display also works without a computer after programming. Tap a test in the menu. In the Serial monitor, use `d`, `t`, `s`, `a`, `b`, `m`, `w`, or `r` (run all).
+The display also works without a computer after programming. Tap a test in the menu. In the Serial monitor, use `d`, `t`, `s`, `a`, `b`, `m`, `w`, `v` (media), or `r` (run all).
+
+## SD media test
+
+Copy `sdcard/test.mjpeg` and `sdcard/test.wav` to the root of a FAT32 SD card, then tap **MEDIA**. The test renders 50 JPEG frames, reports decode FPS and dropped frames, and plays a 22.05 kHz mono PCM WAV through GPIO 26 and the onboard amplifier.
+
+Regenerate both files with:
+
+```text
+python tools/generate_test_media.py
+```
 
 ## Important: confirm the board revision
 

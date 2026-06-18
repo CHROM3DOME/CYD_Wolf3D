@@ -3,8 +3,8 @@
 #include <SD.h>
 #include <WiFi.h>
 #include <TFT_eSPI.h>
+#include <TJpg_Decoder.h>
 #include <driver/i2s.h>
-#include <math.h>
 
 #include "board_config.h"
 
@@ -16,7 +16,7 @@ struct Button { int16_t x, y, w, h; const char *label; char key; };
 Button buttons[] = {
   {8, 54, 96, 45, "DISPLAY", 'd'}, {112, 54, 96, 45, "TOUCH", 't'}, {216, 54, 96, 45, "SD CARD", 's'},
   {8, 107, 96, 45, "AUDIO", 'a'}, {112, 107, 96, 45, "BACKLIGHT", 'b'}, {216, 107, 96, 45, "SYSTEM", 'm'},
-  {8, 160, 96, 45, "WI-FI", 'w'}, {112, 160, 200, 45, "RUN ALL", 'r'}
+  {8, 160, 96, 45, "WI-FI", 'w'}, {112, 160, 96, 45, "MEDIA", 'v'}, {216, 160, 96, 45, "RUN ALL", 'r'}
 };
 
 bool touchReady = false;
@@ -191,26 +191,196 @@ void sdTest() {
 }
 
 void audioTest() {
-  header("AUDIO TEST"); line("\f");
-  line("Playing 440 / 660 / 880 Hz", TFT_YELLOW);
-  i2s_config_t cfg = {};
-  cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN);
-  cfg.sample_rate = 22050; cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
-  cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT; cfg.communication_format = I2S_COMM_FORMAT_STAND_MSB;
-  cfg.intr_alloc_flags = 0; cfg.dma_buf_count = 4; cfg.dma_buf_len = 256; cfg.use_apll = false;
-  if (i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr) != ESP_OK) { line("FAIL: I2S/DAC init", TFT_RED); waitBrief(); return; }
-  // ESP32 DAC channel 2 / I2S "left" is GPIO 26.
-  i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN);
-  uint16_t samples[256];
-  for (int freq : {440, 660, 880}) {
-    for (int chunk=0; chunk<35; ++chunk) {
-      for (int i=0;i<256;++i) { uint8_t v=128 + 70*sin(2*PI*freq*(chunk*256+i)/22050.0); samples[i]=((uint16_t)v)<<8; }
-      size_t written; i2s_write(I2S_NUM_0, samples, sizeof(samples), &written, portMAX_DELAY);
+  constexpr uint8_t toneChannel = 7;
+  constexpr uint16_t toneFrequency = 700;
+  header("AUDIO TEST");
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.drawString("Use 4-8 ohm speaker", tft.width() / 2, 57, 2);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.drawString("700 Hz through onboard amplifier", tft.width() / 2, 78, 2);
+
+  ledcSetup(toneChannel, toneFrequency, 10);
+  ledcAttachPin(AUDIO_DAC_PIN, toneChannel);
+  ledcWriteTone(toneChannel, toneFrequency);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("GPIO " + String(AUDIO_DAC_PIN), tft.width() / 2, 132, 4);
+  for (int seconds = 3; seconds >= 1; --seconds) {
+    tft.fillRect(0, 170, tft.width(), 32, TFT_BLACK);
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.drawString(String(seconds) + " seconds", tft.width() / 2, 186, 2);
+    delay(1000);
+  }
+  ledcWriteTone(toneChannel, 0);
+  ledcDetachPin(AUDIO_DAC_PIN);
+  pinMode(AUDIO_DAC_PIN, OUTPUT);
+  digitalWrite(AUDIO_DAC_PIN, LOW);
+  tft.setTextColor(TFT_GREEN, TFT_BLACK);
+  tft.drawString("TONE COMPLETE", tft.width() / 2, 220, 2);
+  tft.setTextDatum(TL_DATUM);
+  waitBrief(900);
+}
+
+bool jpegToTft(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *pixels) {
+  if (y >= tft.height()) return false;
+  if (x + w > tft.width()) w = tft.width() - x;
+  if (y + h > tft.height()) h = tft.height() - y;
+  tft.pushImage(x, y, w, h, pixels);
+  return true;
+}
+
+bool playMjpeg(File &file, uint32_t &frames, uint32_t &dropped, float &fps) {
+  constexpr size_t maxFrame = 48 * 1024;
+  uint8_t *jpeg = static_cast<uint8_t *>(malloc(maxFrame));
+  if (!jpeg) return false;
+
+  TJpgDec.setSwapBytes(true);
+  TJpgDec.setJpgScale(1);
+  TJpgDec.setCallback(jpegToTft);
+  bool collecting = false;
+  bool overflow = false;
+  uint8_t previous = 0;
+  size_t length = 0;
+  uint32_t started = millis();
+
+  while (file.available()) {
+    uint8_t value = file.read();
+    if (!collecting) {
+      if (previous == 0xFF && value == 0xD8) {
+        collecting = true;
+        overflow = false;
+        length = 2;
+        jpeg[0] = 0xFF;
+        jpeg[1] = 0xD8;
+      }
+    } else {
+      if (length < maxFrame) jpeg[length++] = value;
+      else overflow = true;
+
+      if (previous == 0xFF && value == 0xD9) {
+        if (!overflow && TJpgDec.drawJpg(0, 0, jpeg, length) == JDR_OK) ++frames;
+        else ++dropped;
+        collecting = false;
+        length = 0;
+        delay(1);
+      }
+    }
+    previous = value;
+  }
+
+  uint32_t elapsed = max(1UL, millis() - started);
+  fps = frames * 1000.0f / elapsed;
+  free(jpeg);
+  return frames > 0;
+}
+
+uint16_t readLe16(File &file) {
+  uint16_t value = file.read();
+  value |= static_cast<uint16_t>(file.read()) << 8;
+  return value;
+}
+
+uint32_t readLe32(File &file) {
+  uint32_t value = readLe16(file);
+  value |= static_cast<uint32_t>(readLe16(file)) << 16;
+  return value;
+}
+
+bool playWav(File &file, uint32_t &playedMs) {
+  char id[5] = {};
+  file.readBytes(id, 4);
+  if (memcmp(id, "RIFF", 4) != 0) return false;
+  readLe32(file);
+  file.readBytes(id, 4);
+  if (memcmp(id, "WAVE", 4) != 0) return false;
+
+  uint16_t format = 0, channels = 0, bits = 0;
+  uint32_t sampleRate = 0, dataSize = 0;
+  while (file.available()) {
+    file.readBytes(id, 4);
+    uint32_t chunkSize = readLe32(file);
+    if (memcmp(id, "fmt ", 4) == 0) {
+      format = readLe16(file);
+      channels = readLe16(file);
+      sampleRate = readLe32(file);
+      readLe32(file); readLe16(file); bits = readLe16(file);
+      if (chunkSize > 16) file.seek(file.position() + chunkSize - 16);
+    } else if (memcmp(id, "data", 4) == 0) {
+      dataSize = chunkSize;
+      break;
+    } else {
+      file.seek(file.position() + chunkSize + (chunkSize & 1));
     }
   }
-  i2s_zero_dma_buffer(I2S_NUM_0); i2s_driver_uninstall(I2S_NUM_0);
-  line("Tone sent to GPIO " + String(AUDIO_DAC_PIN), TFT_GREEN);
-  line("PASS requires audible tones."); waitBrief(1300);
+  if (format != 1 || !sampleRate || (channels != 1 && channels != 2) || (bits != 8 && bits != 16) || !dataSize) return false;
+
+  i2s_config_t cfg = {};
+  cfg.mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN);
+  cfg.sample_rate = sampleRate;
+  cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
+  cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+  cfg.communication_format = I2S_COMM_FORMAT_STAND_MSB;
+  cfg.dma_buf_count = 6;
+  cfg.dma_buf_len = 256;
+  if (i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr) != ESP_OK) return false;
+  i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN); // DAC channel 2, GPIO 26
+
+  uint16_t output[256];
+  uint32_t bytesRead = 0;
+  uint32_t started = millis();
+  while (bytesRead < dataSize && file.available()) {
+    size_t count = 0;
+    while (count < 256 && bytesRead < dataSize && file.available()) {
+      int32_t sample;
+      if (bits == 16) {
+        int16_t left = static_cast<int16_t>(readLe16(file)); bytesRead += 2;
+        sample = left;
+        if (channels == 2) { int16_t right = static_cast<int16_t>(readLe16(file)); bytesRead += 2; sample = (left + right) / 2; }
+        output[count++] = static_cast<uint16_t>((constrain(sample, -32768, 32767) + 32768) >> 8) << 8;
+      } else {
+        uint16_t value = file.read(); ++bytesRead;
+        if (channels == 2) { value = (value + file.read()) / 2; ++bytesRead; }
+        output[count++] = value << 8;
+      }
+    }
+    size_t written;
+    i2s_write(I2S_NUM_0, output, count * sizeof(uint16_t), &written, portMAX_DELAY);
+  }
+  i2s_zero_dma_buffer(I2S_NUM_0);
+  i2s_driver_uninstall(I2S_NUM_0);
+  playedMs = millis() - started;
+  return bytesRead > 0;
+}
+
+void mediaTest() {
+  header("SD MEDIA TEST"); line("\f");
+  if (!beginSD()) { line("FAIL: card not mounted", TFT_RED); endSDBusAndRestoreTouch(); waitBrief(1800); return; }
+
+  File video = SD.open("/test.mjpeg", FILE_READ);
+  if (!video) line("Missing /test.mjpeg", TFT_RED);
+  else {
+    tft.fillScreen(TFT_BLACK);
+    uint32_t frames = 0, dropped = 0; float fps = 0;
+    bool ok = playMjpeg(video, frames, dropped, fps);
+    video.close();
+    header("VIDEO RESULT"); line("\f");
+    line(String(ok ? "PASS: " : "FAIL: ") + frames + " frames", ok ? TFT_GREEN : TFT_RED);
+    line("Decode: " + String(fps, 1) + " FPS");
+    line("Dropped/oversize: " + String(dropped));
+    waitBrief(1500);
+  }
+
+  File audio = SD.open("/test.wav", FILE_READ);
+  if (!audio) { header("AUDIO FILE RESULT"); line("\f"); line("Missing /test.wav", TFT_RED); }
+  else {
+    header("WAV PLAYBACK"); line("\f"); line("Playing /test.wav...", TFT_YELLOW);
+    uint32_t playedMs = 0;
+    bool ok = playWav(audio, playedMs);
+    audio.close();
+    line(String(ok ? "PASS: " : "FAIL: ") + playedMs + " ms", ok ? TFT_GREEN : TFT_RED);
+  }
+  endSDBusAndRestoreTouch();
+  waitBrief(1800);
 }
 
 void backlightTest() {
@@ -244,8 +414,8 @@ void runTest(char key) {
   switch(key) {
     case 'd': displayTest(); break; case 't': touchTest(); break; case 's': sdTest(); break;
     case 'a': audioTest(); break; case 'b': backlightTest(); break; case 'm': systemTest(); break;
-    case 'w': wifiTest(); break;
-    case 'r': displayTest(); touchTest(); sdTest(); audioTest(); backlightTest(); systemTest(); wifiTest(); break;
+    case 'w': wifiTest(); break; case 'v': mediaTest(); break;
+    case 'r': displayTest(); touchTest(); sdTest(); audioTest(); backlightTest(); systemTest(); wifiTest(); mediaTest(); break;
     default: return;
   }
   showMenu();
