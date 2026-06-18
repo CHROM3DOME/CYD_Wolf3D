@@ -12,7 +12,10 @@
 
 #ifdef WOLF3D_CYD_PORT
 #ifndef CYD_WOLF_VIEW_SIZE
-#define CYD_WOLF_VIEW_SIZE 10
+#define CYD_WOLF_VIEW_SIZE 20
+#endif
+#ifndef CYD_WOLF_SKIP_BOOT_SCREENS
+#define CYD_WOLF_SKIP_BOOT_SCREENS 1
 #endif
 #endif
 
@@ -1340,7 +1343,9 @@ static void InitGame()
 //
 // draw intro screen stuff
 //
+#if !defined(WOLF3D_CYD_PORT) || !CYD_WOLF_SKIP_BOOT_SCREENS
     IntroScreen ();
+#endif
 
 //
 // load in and lock down some basic chunks
@@ -1367,7 +1372,11 @@ static void InitGame()
 #ifndef SPEARDEMO
     if(!didjukebox)
 #endif
+#if !defined(WOLF3D_CYD_PORT) || !CYD_WOLF_SKIP_BOOT_SCREENS
         FinishSignon();
+#else
+        VH_UpdateScreen();
+#endif
 
 #ifdef WOLF3D_CYD_PORT
     UNCACHEGRCHUNK(STARTFONT);

@@ -23,7 +23,28 @@
 
 // Wolf3D performance profile. 20 is the classic large play view with HUD;
 // smaller values draw fewer wall columns and are much faster on the ESP32.
-#define CYD_WOLF_VIEW_SIZE 10
+#define CYD_WOLF_VIEW_SIZE 20
+
+// Skip Wolf's PC hardware/config sign-on screens for appliance-style boot.
+#define CYD_WOLF_SKIP_BOOT_SCREENS 1
+
+// Performance toggles. Sprites should stay on for playable builds; the weapon
+// overlay is expensive and cosmetic, so keep it off on the ESP32.
+#define CYD_WOLF_DRAW_SPRITES 1
+#define CYD_WOLF_DRAW_WEAPON 0
+
+// Flat walls trade texture art for speed. This is the current CYD speed mode.
+#define CYD_WOLF_FLAT_WALLS 1
+
+// Large sprites are expensive. Draw them at half horizontal detail and
+// duplicate columns to keep silhouettes readable.
+#define CYD_WOLF_FAST_SPRITES 1
+#define CYD_WOLF_FAST_SPRITE_MIN_HEIGHT 96
+#define CYD_WOLF_SPRITE_BUDGET_US 0
+
+// Quiet field build by default. Set these to 1 when collecting serial diagnostics.
+#define CYD_WOLF_ENABLE_PERF_LOGS 0
+#define CYD_WOLF_ENABLE_FRAME_HEARTBEAT 0
 
 // Raw XPT2046 endpoints. Run the Touch test and adjust if taps are mirrored
 // or do not reach the screen edges.

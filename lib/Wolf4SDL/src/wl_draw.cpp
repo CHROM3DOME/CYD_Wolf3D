@@ -9,6 +9,31 @@
 #ifdef WOLF3D_CYD_PORT
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 extern "C" void cyd_poll_touch_controls(void);
+extern "C" uint32_t cyd_perf_micros(void);
+extern "C" void cyd_perf_record_render_phases(uint32_t prepUs, uint32_t clearUs,
+                                              uint32_t wallUs, uint32_t spriteUs,
+                                              uint32_t weaponUs, uint32_t presentUs);
+#ifndef CYD_WOLF_DRAW_SPRITES
+#define CYD_WOLF_DRAW_SPRITES 1
+#endif
+#ifndef CYD_WOLF_DRAW_WEAPON
+#define CYD_WOLF_DRAW_WEAPON 0
+#endif
+#ifndef CYD_WOLF_FLAT_WALLS
+#define CYD_WOLF_FLAT_WALLS 1
+#endif
+#ifndef CYD_WOLF_FAST_SPRITES
+#define CYD_WOLF_FAST_SPRITES 1
+#endif
+#ifndef CYD_WOLF_FAST_SPRITE_MIN_HEIGHT
+#define CYD_WOLF_FAST_SPRITE_MIN_HEIGHT 96
+#endif
+#ifndef CYD_WOLF_SPRITE_BUDGET_US
+#define CYD_WOLF_SPRITE_BUDGET_US 0
+#endif
+#ifndef CYD_WOLF_ENABLE_FRAME_HEARTBEAT
+#define CYD_WOLF_ENABLE_FRAME_HEARTBEAT 0
+#endif
 #endif
 
 /*
@@ -316,6 +341,30 @@ void ScalePost()
     col = postsource[yw];
 #endif
     yendoffs = yendoffs * vbufPitch + postx;
+
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+    {
+        byte basecol;
+        if(lastside == 2)
+            basecol = 0x6d;                 // doors: warm brown
+        else if(lastside == 1)
+            basecol = (lasttilehit & 1) ? 0x35 : 0x37;   // vertical walls: blue/gray family
+        else
+            basecol = (lasttilehit & 1) ? 0x39 : 0x3b;   // horizontal walls: nearby darker family
+#ifdef USE_SHADING
+        col = curshades[basecol];
+#else
+        col = basecol;
+#endif
+        while(yoffs <= yendoffs)
+        {
+            vbuf[yendoffs] = col;
+            yendoffs -= vbufPitch;
+        }
+        return;
+    }
+#endif
+
     while(yoffs <= yendoffs)
     {
         vbuf[yendoffs] = col;
@@ -408,7 +457,11 @@ void HitVertWall (void)
     else
         wallpic = vertwall[tilehit];
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+    postsource = nullptr;
+#else
     postsource = PM_GetTexture(wallpic) + texture;
+#endif
 }
 
 
@@ -473,7 +526,11 @@ void HitHorizWall (void)
     else
         wallpic = horizwall[tilehit];
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+    postsource = nullptr;
+#else
     postsource = PM_GetTexture(wallpic) + texture;
+#endif
 }
 
 //==========================================================================
@@ -538,7 +595,11 @@ void HitHorizDoor (void)
             break;
     }
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+    postsource = nullptr;
+#else
     postsource = PM_GetTexture(doorpage) + texture;
+#endif
 }
 
 //==========================================================================
@@ -603,7 +664,11 @@ void HitVertDoor (void)
             break;
     }
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+    postsource = nullptr;
+#else
     postsource = PM_GetTexture(doorpage) + texture;
+#endif
 }
 
 //==========================================================================
@@ -720,17 +785,27 @@ void ScaleShape (int xcenter, int shapenum, unsigned height, uint32_t flags)
     scale=height>>3;                 // low three bits are fractional
     if(!scale) return;   // too close or far away
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FAST_SPRITES
+    const int cydSpriteSourceStep = 1;
+    const int cydSpriteColumnStep = (height >= CYD_WOLF_FAST_SPRITE_MIN_HEIGHT) ? 2 : 1;
+    const int cydSpriteRowStep = 1;
+#else
+    const int cydSpriteSourceStep = 1;
+    const int cydSpriteColumnStep = 1;
+    const int cydSpriteRowStep = 1;
+#endif
+
     pixheight=scale*SPRITESCALEFACTOR;
     actx=xcenter-scale;
     upperedge=viewheight/2-scale;
 
     cmdptr=(word *) shape->dataofs;
 
-    for(i=shape->leftpix,pixcnt=i*pixheight,rpix=(pixcnt>>6)+actx;i<=shape->rightpix;i++,cmdptr++)
+    for(i=shape->leftpix,pixcnt=i*pixheight,rpix=(pixcnt>>6)+actx;i<=shape->rightpix;i+=cydSpriteSourceStep,cmdptr+=cydSpriteSourceStep)
     {
         lpix=rpix;
         if(lpix>=viewwidth) break;
-        pixcnt+=pixheight;
+        pixcnt+=pixheight*cydSpriteSourceStep;
         rpix=(pixcnt>>6)+actx;
         if(lpix!=rpix && rpix>0)
         {
@@ -770,14 +845,19 @@ void ScaleShape (int xcenter, int shapenum, unsigned height, uint32_t flags)
                                 while(scrstarty<screndy)
                                 {
                                     *vmem=col;
-                                    vmem+=vbufPitch;
-                                    scrstarty++;
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FAST_SPRITES
+                                    if(lpix + 1 < rpix && lpix + 1 < viewwidth &&
+                                       wallheight[lpix + 1] <= (int)height)
+                                        *(vmem + 1)=col;
+#endif
+                                    vmem+=vbufPitch*cydSpriteRowStep;
+                                    scrstarty+=cydSpriteRowStep;
                                 }
                             }
                         }
                     }
                 }
-                lpix++;
+                lpix += cydSpriteColumnStep;
             }
         }
     }
@@ -991,6 +1071,10 @@ void DrawScaleds (void)
     if (!numvisable)
         return;                                                                 // no visable objects
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_SPRITE_BUDGET_US
+    uint32_t cydSpriteBudgetStart = cyd_perf_micros();
+#endif
+
     for (i = 0; i<numvisable; i++)
     {
         least = 32000;
@@ -1014,6 +1098,10 @@ void DrawScaleds (void)
             ScaleShape(farthest->viewx, farthest->shapenum, farthest->viewheight, farthest->flags);
 
         farthest->viewheight = 32000;
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_SPRITE_BUDGET_US
+        if(i > 0 && cyd_perf_micros() - cydSpriteBudgetStart > CYD_WOLF_SPRITE_BUDGET_US)
+            break;
+#endif
     }
 }
 
@@ -1573,6 +1661,13 @@ void CalcViewVariables()
 void    ThreeDRefresh (void)
 {
 #ifdef WOLF3D_CYD_PORT
+    uint32_t cydRenderStart = cyd_perf_micros();
+    uint32_t cydPrepUs = 0;
+    uint32_t cydClearUs = 0;
+    uint32_t cydWallUs = 0;
+    uint32_t cydSpriteUs = 0;
+    uint32_t cydWeaponUs = 0;
+#if CYD_WOLF_ENABLE_FRAME_HEARTBEAT
     static uint32_t cydLastFrameLog = 0;
     uint32_t cydNow = SDL_GetTicks();
     if(cydNow - cydLastFrameLog > 1000)
@@ -1580,6 +1675,7 @@ void    ThreeDRefresh (void)
         cydLastFrameLog = cydNow;
         furi_log_print_format(2, "Wolf3D", "Frame heartbeat %u", (unsigned)frameon);
     }
+#endif
 #endif
 //
 // clear out the traced array
@@ -1594,17 +1690,29 @@ void    ThreeDRefresh (void)
     vbufPitch = bufferPitch;
 
     CalcViewVariables();
+#ifdef WOLF3D_CYD_PORT
+    cydPrepUs = cyd_perf_micros() - cydRenderStart;
+    uint32_t cydPhaseStart = cyd_perf_micros();
+#endif
 
 //
 // follow the walls from there to the right, drawing as we go
 //
     VGAClearScreen ();
+#ifdef WOLF3D_CYD_PORT
+    cydClearUs = cyd_perf_micros() - cydPhaseStart;
+    cydPhaseStart = cyd_perf_micros();
+#endif
 #if defined(USE_FEATUREFLAGS) && defined(USE_STARSKY)
     if(GetFeatureFlags() & FF_STARSKY)
         DrawStarSky(vbuf, vbufPitch);
 #endif
 
     WallRefresh ();
+#ifdef WOLF3D_CYD_PORT
+    cydWallUs = cyd_perf_micros() - cydPhaseStart;
+    cydPhaseStart = cyd_perf_micros();
+#endif
 
 #if defined(USE_FEATUREFLAGS) && defined(USE_PARALLAX)
     if(GetFeatureFlags() & FF_PARALLAXSKY)
@@ -1621,7 +1729,13 @@ void    ThreeDRefresh (void)
 //
 // draw all the scaled images
 //
+#if !defined(WOLF3D_CYD_PORT) || CYD_WOLF_DRAW_SPRITES
     DrawScaleds();                  // draw scaled stuff
+#endif
+#ifdef WOLF3D_CYD_PORT
+    cydSpriteUs = cyd_perf_micros() - cydPhaseStart;
+    cydPhaseStart = cyd_perf_micros();
+#endif
 
 #if defined(USE_FEATUREFLAGS) && defined(USE_RAIN)
     if(GetFeatureFlags() & FF_RAIN)
@@ -1632,7 +1746,12 @@ void    ThreeDRefresh (void)
         DrawSnow(vbuf, vbufPitch);
 #endif
 
+#if !defined(WOLF3D_CYD_PORT) || CYD_WOLF_DRAW_WEAPON
     DrawPlayerWeapon ();    // draw player's hands
+#endif
+#ifdef WOLF3D_CYD_PORT
+    cydWeaponUs = cyd_perf_micros() - cydPhaseStart;
+#endif
     if (crosshair)
         DrawCrosshair ();
 
@@ -1667,7 +1786,16 @@ void    ThreeDRefresh (void)
         }
 #endif
         SDL_BlitSurface(screenBuffer, NULL, screen, NULL);
+#ifdef WOLF3D_CYD_PORT
+        uint32_t cydRenderUs = cyd_perf_micros() - cydRenderStart;
+        uint32_t cydPresentStart = cyd_perf_micros();
+#endif
         VL_Flip();
+#ifdef WOLF3D_CYD_PORT
+        uint32_t cydPresentUs = cyd_perf_micros() - cydPresentStart;
+        cyd_perf_record_render_phases(cydPrepUs, cydClearUs, cydWallUs, cydSpriteUs, cydWeaponUs,
+                                      cydPresentUs);
+#endif
     }
 
 #ifndef REMDEBUG

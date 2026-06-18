@@ -19,16 +19,24 @@ uint8_t **PMPages;
 #include <esp_heap_caps.h>
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 extern "C" void cyd_wolf3d_status(const char *message);
+extern "C" uint32_t cyd_perf_micros(void);
 namespace {
 constexpr int PM_CACHE_SLOTS = 3;
+constexpr int PM_PREALLOC_SLOTS = 3;
 constexpr int PM_EMPTY_PAGE_SIZE = 1;
 constexpr uint32_t PM_PREALLOC_SIZE = 4096;
+constexpr uint32_t PM_MIN_FREE_AFTER_ALLOC = 30000;
+constexpr bool PM_ENABLE_STATS_LOG = false;
 
 uint32_t *PMPageOffsets = nullptr;
 uint32_t *PMPageSizes = nullptr;
 char PMPageFileName[13] = {};
 uint32_t PMCacheClock = 0;
 uint8_t PMEmptyPage[PM_EMPTY_PAGE_SIZE] = {};
+uint32_t PMStatHits = 0;
+uint32_t PMStatMisses = 0;
+uint32_t PMStatReadUs = 0;
+uint32_t PMStatLastLogMs = 0;
 
 struct PMCacheSlot {
     int page = -1;
@@ -53,7 +61,7 @@ void PM_ClearCache()
 
 void PM_PreallocateCache()
 {
-    for(int i = 0; i < PM_CACHE_SLOTS; ++i)
+    for(int i = 0; i < PM_PREALLOC_SLOTS; ++i)
     {
         if(PMCache[i].data) continue;
         PMCache[i].data = (uint8_t *) malloc(PM_PREALLOC_SIZE);
@@ -69,6 +77,30 @@ void PM_PreallocateCache()
         furi_log_print_format(2, "Wolf3D", "PM prealloc slot %i size %u heap %u largest %u",
             i, PM_PREALLOC_SIZE, esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
+}
+
+void PM_LogStats()
+{
+    if(!PM_ENABLE_STATS_LOG) return;
+    uint32_t nowMs = cyd_perf_micros() / 1000;
+    if(nowMs - PMStatLastLogMs < 2000) return;
+
+    uint32_t total = PMStatHits + PMStatMisses;
+    if(total)
+    {
+        uint32_t missPct = (PMStatMisses * 100) / total;
+        uint32_t avgReadUs = PMStatMisses ? PMStatReadUs / PMStatMisses : 0;
+        furi_log_print_format(2, "Wolf3D",
+            "PM hits=%u misses=%u miss=%u%% avgread=%u.%03ums heap=%u max=%u",
+            PMStatHits, PMStatMisses, missPct,
+            avgReadUs / 1000, avgReadUs % 1000,
+            esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+
+    PMStatHits = 0;
+    PMStatMisses = 0;
+    PMStatReadUs = 0;
+    PMStatLastLogMs = nowMs;
 }
 
 int PM_ChooseSlot()
@@ -283,34 +315,48 @@ uint8_t *PM_GetPage(int page)
         if(PMCache[i].page == page)
         {
             PMCache[i].lastUse = ++PMCacheClock;
+            PMStatHits++;
+            PM_LogStats();
             return PMCache[i].data;
         }
     }
 
+    PMStatMisses++;
     int slotIndex = PM_ChooseSlot();
     PMCacheSlot &slot = PMCache[slotIndex];
     if(slot.capacity < size)
     {
-        char status[80];
-        snprintf(status, sizeof(status), "PM page %i size %u heap %u max %u",
-                 page, size, esp_get_free_heap_size(),
-                 heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-        furi_log_print_format(2, "Wolf3D", "%s", status);
-        cyd_wolf3d_status(status);
+        const uint32_t freeHeap = esp_get_free_heap_size();
+        const uint32_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if(freeHeap < size + PM_MIN_FREE_AFTER_ALLOC || largest < size)
+        {
+            furi_log_print_format(2, "Wolf3D",
+                "PM reuse slot %i for page %i size %u heap %u max %u",
+                slotIndex, page, size, freeHeap, largest);
+        }
 
         free(slot.data);
         slot.data = nullptr;
         slot.capacity = 0;
         slot.page = -1;
 
-        uint8_t *newData = (uint8_t *) malloc(size);
+        uint32_t allocSize = size;
+        if(freeHeap >= PM_PREALLOC_SIZE + PM_MIN_FREE_AFTER_ALLOC &&
+           largest >= PM_PREALLOC_SIZE &&
+           PM_PREALLOC_SIZE > size)
+        {
+            allocSize = PM_PREALLOC_SIZE;
+        }
+
+        uint8_t *newData = (uint8_t *) malloc(allocSize);
         CHECKMALLOCRESULT(newData);
         slot.data = newData;
-        slot.capacity = size;
+        slot.capacity = allocSize;
     }
 
     FILE *file = fopen(PMPageFileName, "rb");
     if(!file) CA_CannotOpen(PMPageFileName);
+    uint32_t readStartUs = cyd_perf_micros();
     fseek(file, PMPageOffsets[page], SEEK_SET);
     if(fread(slot.data, 1, size, file) != size)
     {
@@ -318,9 +364,11 @@ uint8_t *PM_GetPage(int page)
         Quit("Could not read VSWAP page %i", page);
     }
     fclose(file);
+    PMStatReadUs += cyd_perf_micros() - readStartUs;
 
     slot.page = page;
     slot.lastUse = ++PMCacheClock;
+    PM_LogStats();
     return slot.data;
 }
 
