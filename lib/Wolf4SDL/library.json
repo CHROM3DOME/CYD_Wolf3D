@@ -1,0 +1,13 @@
+{
+  "name": "Wolf4SDL",
+  "version": "0.1.0",
+  "license": "GPL-2.0",
+  "build": {
+    "srcFilter": [
+      "+<*>",
+      "-<id_sd.cpp>",
+      "-<id_sd.cpp.full>",
+      "-<signon.cpp>"
+    ]
+  }
+}

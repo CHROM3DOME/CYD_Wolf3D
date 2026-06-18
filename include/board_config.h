@@ -21,6 +21,10 @@
 // The usual CYD audio connection is ESP32 DAC channel 2 on GPIO 26.
 #define AUDIO_DAC_PIN 26
 
+// Wolf3D performance profile. 20 is the classic large play view with HUD;
+// smaller values draw fewer wall columns and are much faster on the ESP32.
+#define CYD_WOLF_VIEW_SIZE 10
+
 // Raw XPT2046 endpoints. Run the Touch test and adjust if taps are mirrored
 // or do not reach the screen edges.
 #define TOUCH_MIN_X 200
