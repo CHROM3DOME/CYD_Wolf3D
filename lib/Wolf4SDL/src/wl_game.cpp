@@ -4,6 +4,12 @@
 #include "wl_def.h"
 #include <SDL_mixer.h>
 
+#ifdef WOLF3D_CYD_PORT
+#ifndef CYD_WOLF_DRAW_STATUSBAR_ART
+#define CYD_WOLF_DRAW_STATUSBAR_ART 0
+#endif
+#endif
+
 #ifdef MYPROFILE
 #include <TIME.H>
 #endif
@@ -926,7 +932,7 @@ void DrawPlayBorder (void)
 
 void DrawPlayScreen (void)
 {
-#ifdef WOLF3D_CYD_PORT
+#if defined(WOLF3D_CYD_PORT) && !CYD_WOLF_DRAW_STATUSBAR_ART
     VWB_BarScaledCoord((screenWidth - scaleFactor * 320) / 2,
                        screenHeight - scaleFactor * STATUSLINES,
                        scaleFactor * 320,

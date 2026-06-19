@@ -11,6 +11,7 @@
 #include <SDL_syswm.h>
 
 #ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_wall_cache_preload(void);
 #ifndef CYD_WOLF_VIEW_SIZE
 #define CYD_WOLF_VIEW_SIZE 20
 #endif
@@ -1958,6 +1959,9 @@ int main (int argc, char *argv[])
     InitGame();
     furi_log_print_format(2, "Wolf3D", ">>> InitGame OK (screenBuffer=%p, scaleFactor=%u)",
                           (void*)screenBuffer, scaleFactor);
+
+    CYD_STATUS("Wall cache...");
+    cyd_wall_cache_preload();
 
     furi_log_print_format(2, "Wolf3D", ">>> entering DemoLoop");
     DemoLoop();

@@ -144,7 +144,7 @@ extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height
 
   presentIndexedRect(pixels, width, height, pitch, viewscreenx, viewscreeny, viewwidth, viewheight);
 
-  if ((frameCounter % 12) == 0) {
+  if (true) {
     const int hudY = max(0, height - 40);
     presentIndexedRect(pixels, width, height, pitch, 0, hudY, min(width, 320), height - hudY);
   }
