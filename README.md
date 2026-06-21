@@ -9,7 +9,7 @@ This project started as a hardware tester for CYD clones and grew into a purpose
 The current Wolf3D build boots directly into gameplay on the CYD and includes:
 
 - landscape ILI9341 display output
-- touch/input scaffolding for CYD-style controls
+- touch/input scaffolding for CYD-style controls (left half of touch screen controls movement, top right opens doors, bottom right fires)
 - SD-card loading of Wolf3D data
 - simplified renderer tuned for ESP32 RAM and CPU limits
 - flat-color walls with selected low-resolution cached texture support
