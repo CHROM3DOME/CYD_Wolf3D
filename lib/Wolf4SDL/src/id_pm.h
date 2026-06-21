@@ -24,6 +24,8 @@ void PM_Shutdown();
 uint32_t PM_GetPageSize(int page);
 uint8_t *PM_GetPage(int page);
 uint8_t *PM_GetEnd();
+uint8_t *PM_PinPage(int page);
+void PM_UnpinPage(int page);
 #else
 static inline uint32_t PM_GetPageSize(int page)
 {

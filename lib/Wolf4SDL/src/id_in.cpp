@@ -76,7 +76,7 @@ static int JoyNumHats;
 
 =============================================================================
 */
-byte        ASCIINames[] =		// Unshifted ASCII for scan codes       // TODO: keypad
+const byte  ASCIINames[] =		// Unshifted ASCII for scan codes       // TODO: keypad
 {
 //	 0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,8  ,9  ,0  ,0  ,0  ,13 ,0  ,0  ,	// 0
@@ -88,7 +88,7 @@ byte        ASCIINames[] =		// Unshifted ASCII for scan codes       // TODO: key
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,	// 6
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0		// 7
 };
-byte ShiftNames[] =		// Shifted ASCII for scan codes
+const byte ShiftNames[] =		// Shifted ASCII for scan codes
 {
 //	 0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,8  ,9  ,0  ,0  ,0  ,13 ,0  ,0  ,	// 0
@@ -100,7 +100,7 @@ byte ShiftNames[] =		// Shifted ASCII for scan codes
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,	// 6
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0		// 7
 };
-byte SpecialNames[] =	// ASCII for 0xe0 prefixed codes
+const byte SpecialNames[] =	// ASCII for 0xe0 prefixed codes
 {
 //	 0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
 	0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,0  ,	// 0
@@ -116,7 +116,7 @@ byte SpecialNames[] =	// ASCII for 0xe0 prefixed codes
 
 static	boolean		IN_Started;
 
-static	Direction	DirTable[] =		// Quick lookup for total direction
+static const Direction	DirTable[] =		// Quick lookup for total direction
 {
     dir_NorthWest,	dir_North,	dir_NorthEast,
     dir_West,		dir_None,	dir_East,

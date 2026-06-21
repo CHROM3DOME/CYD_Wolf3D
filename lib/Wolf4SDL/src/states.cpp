@@ -59,7 +59,7 @@ extern void T_Stand (objtype *);
 extern void T_UShoot (objtype *);
 extern void T_Will (objtype *);
 
-statetype states[numstates] = {
+const statetype states[numstates] = {
 	{false,0,0,NULL,NULL,s_null},	// s_null
 	{false,0,0,(statefunc)T_Player,NULL,s_null},	// s_player
 	{false,0,0,(statefunc)T_Attack,NULL,s_null},	// s_attack

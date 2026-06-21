@@ -58,7 +58,7 @@ extern byte signon[];
 */
 
 char    str[80];
-int     dirangle[9] = {0,ANGLES/8,2*ANGLES/8,3*ANGLES/8,4*ANGLES/8,
+const int     dirangle[9] = {0,ANGLES/8,2*ANGLES/8,3*ANGLES/8,4*ANGLES/8,
                        5*ANGLES/8,6*ANGLES/8,7*ANGLES/8,ANGLES};
 
 //
@@ -129,6 +129,18 @@ boolean always_run = false;
 
 void ReadConfig(void)
 {
+#ifdef WOLF3D_CYD_PORT
+    mouseenabled = false;
+    joystickenabled = false;
+    viewsize = CYD_WOLF_VIEW_SIZE;
+    mouseadjustment_v = mouseadjustment = 0;
+    always_run = false;
+    crosshair = false;
+    SD_SetMusicMode(smm_Off);
+    SD_SetSoundMode(sdm_PC);
+    SD_SetDigiDevice(sds_SoundBlaster);
+    return;
+#else
     SDMode  sd;
     SMMode  sm;
     SDSMode sds;
@@ -269,6 +281,7 @@ noconfig:
     SD_SetMusicMode (sm);
     SD_SetSoundMode (sd);
     SD_SetDigiDevice (sds);
+#endif
 }
 
 /*
@@ -945,7 +958,7 @@ void FinishSignon (void)
 //   0: player weapons
 //   1: boss weapons
 
-static int wolfdigimap[] =
+static const int wolfdigimap[] =
     {
         // These first sounds are in the upload version
 #ifndef SPEAR
@@ -1060,7 +1073,7 @@ static int wolfdigimap[] =
 
 void InitDigiMap (void)
 {
-    int *map;
+    const int *map;
 
     for (map = wolfdigimap; *map != LASTSOUND; map += 3)
     {
@@ -1325,7 +1338,9 @@ static void InitGame()
     ReadConfig ();
 
     CYD_STATUS("Save slots...");
+#ifndef WOLF3D_CYD_PORT
     SetupSaveGames();
+#endif
 
 //
 // HOLDING DOWN 'M' KEY?
@@ -1583,6 +1598,16 @@ void Quit (const char *errorStr, ...)
 
 static void DemoLoop()
 {
+#ifdef WOLF3D_CYD_PORT
+    param_nowait = true;
+    while (1)
+    {
+        NewGame(param_difficulty, 0);
+        gamestate.episode = 0;
+        gamestate.mapon = 0;
+        GameLoop();
+    }
+#else
     int LastDemo = 0;
 
 //
@@ -1712,6 +1737,7 @@ if (!param_demotest)
             }
         }
     }
+#endif
 }
 
 

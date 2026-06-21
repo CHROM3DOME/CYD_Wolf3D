@@ -744,7 +744,7 @@ word pwallstate;
 word pwallpos;                  // amount a pushable wall has been moved (0-63)
 word pwallx,pwally;
 byte pwalldir,pwalltile;
-int dirs[4][2]={{0,-1},{1,0},{0,1},{-1,0}};
+const int dirs[4][2]={{0,-1},{1,0},{0,1},{-1,0}};
 
 /*
 ===============

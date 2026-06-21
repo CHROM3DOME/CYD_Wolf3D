@@ -1,8 +1,6 @@
 #pragma once
 
-// Defaults for the common ESP32-2432S028R ("Cheap Yellow Display") layout.
-// Elegoo revisions may differ: change only this file and the matching TFT pins
-// in platformio.ini when adapting another board revision.
+// ESP32-2432S028R / Cheap Yellow Display configuration.
 
 #define DISPLAY_ROTATION 1
 #define TFT_BACKLIGHT_PIN 21
@@ -18,52 +16,71 @@
 #define SD_MISO 19
 #define SD_MOSI 23
 
-// The usual CYD audio connection is ESP32 DAC channel 2 on GPIO 26.
 #define AUDIO_DAC_PIN 26
 
-// Wolf3D performance profile. 20 is the classic large play view with HUD;
-// smaller values draw fewer wall columns and are much faster on the ESP32.
+#define CYD_RGB_LED_ENABLE 1
+#define CYD_RGB_RED_PIN 4
+#define CYD_RGB_GREEN_PIN 16
+#define CYD_RGB_BLUE_PIN 17
+#define CYD_RGB_ACTIVE_LOW 1
+#define CYD_RGB_MAX_BRIGHTNESS 64
+
+// Wolf3D display profile.
 #define CYD_WOLF_VIEW_SIZE 20
 
-// Skip Wolf's PC hardware/config sign-on screens for appliance-style boot.
+#define CYD_WOLF_BUILD_NUMBER 20
+
+#define CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT 160
+
 #define CYD_WOLF_SKIP_BOOT_SCREENS 1
 
-// Performance toggles. Sprites should stay on for playable builds. Weapon/HUD
-// art are back on now that the 8x8 wall cache is stable enough to test them.
+// Renderer feature flags.
 #define CYD_WOLF_DRAW_SPRITES 1
 #define CYD_WOLF_DRAW_WEAPON 1
 #define CYD_WOLF_DRAW_STATUSBAR_ART 0
 
-// Flat walls trade texture art for speed. This is the current CYD speed mode.
 #define CYD_WOLF_FLAT_WALLS 1
 #define CYD_WOLF_WALL_TEXTURE_CACHE 1
 #define CYD_WOLF_WALL_TEXTURE_MIN_PIC 0
 
-// Large sprites are expensive. Draw them at half horizontal detail and
-// duplicate columns to keep silhouettes readable.
+// Sprite quality/performance profile.
 #define CYD_WOLF_FAST_SPRITES 1
-#define CYD_WOLF_FAST_SPRITE_MIN_HEIGHT 96
+#define CYD_WOLF_FAST_SPRITE_MIN_HEIGHT 32
 #define CYD_WOLF_FAST_DECOR_SPRITE_MIN_HEIGHT 32
+#define CYD_WOLF_FAST_WEAPON_SPRITES 1
 #define CYD_WOLF_HIDE_TINY_DECOR_SPRITES 1
 #define CYD_WOLF_TINY_DECOR_MAX_HEIGHT 14
 #define CYD_WOLF_DRAW_STATIC_DECOR 1
 #define CYD_WOLF_MAX_STATIC_DECOR_SPRITES 8
 #define CYD_WOLF_STATIC_DECOR_IMPOSTORS 1
 #define CYD_WOLF_STATIC_DECOR_CACHE 1
+#define CYD_WOLF_DECOR_CACHE_COUNT 48
 #define CYD_WOLF_DECOR_OCCLUSION_MARGIN 16
 #define CYD_WOLF_SPRITE_BUDGET_US 0
 
-// Quiet field build by default. Set these to 1 when collecting serial diagnostics.
-#define CYD_WOLF_ENABLE_PERF_LOGS 1
+// Diagnostics.
+#define CYD_WOLF_ENABLE_PERF_LOGS 0
 #define CYD_WOLF_ENABLE_FRAME_HEARTBEAT 0
+#define CYD_WOLF_RESOURCE_TRACE 0
+#define CYD_WOLF_RESOURCE_TRACE_INTERVAL_MS 3000
 
-// Basic generated CYD speaker cues. This is intentionally not the full Wolf3D
-// sound system yet; it gives useful feedback without loading audio assets.
+// VSWAP hot-page cache.
+#define CYD_WOLF_HOT_PAGE_CACHE 1
+#define CYD_WOLF_HOT_PAGE_CACHE_SLOTS 6
+#define CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES 1536
+
+#define CYD_WOLF_SCREEN_FLASHES 0
+
+// CYD memory profile.
+#define CYD_WOLF_MAXACTORS 128
+#define CYD_WOLF_MAXSTATS 400
+#define CYD_WOLF_MAXVISABLE 128
+
+// Audio.
 #define CYD_WOLF_BASIC_SOUND 1
 #define CYD_WOLF_SOUND_DUTY 43
 
-// Raw XPT2046 endpoints. Run the Touch test and adjust if taps are mirrored
-// or do not reach the screen edges.
+// XPT2046 touch calibration.
 #define TOUCH_MIN_X 200
 #define TOUCH_MAX_X 3900
 #define TOUCH_MIN_Y 200

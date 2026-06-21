@@ -5,6 +5,10 @@
 
 #include "board_config.h"
 
+#ifndef CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT
+#define CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT 100
+#endif
+
 extern "C" int wolf_main(int argc, char *argv[]);
 extern "C" int wolf3d_is_ingame(void);
 
@@ -92,7 +96,13 @@ extern "C" void cyd_wolf3d_fatal(const char *message) {
 extern "C" void cyd_set_palette(const uint8_t *rgb, int first, int count) {
   for (int i = 0; i < count && first + i < 256; ++i) {
     const uint8_t *p = rgb + i * 3;
-    palette565[first + i] = wolfTft.color565(p[0], p[1], p[2]);
+    int r = (int)p[0] * CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT / 100;
+    int g = (int)p[1] * CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT / 100;
+    int b = (int)p[2] * CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT / 100;
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+    palette565[first + i] = wolfTft.color565((uint8_t)r, (uint8_t)g, (uint8_t)b);
   }
 }
 

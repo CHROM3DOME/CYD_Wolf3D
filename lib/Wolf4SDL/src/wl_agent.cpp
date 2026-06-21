@@ -2,6 +2,10 @@
 
 #include "wl_def.h"
 
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_wolf_flash_event(int kind, int level, int durationMs);
+#endif
+
 /*
 =============================================================================
 
@@ -709,21 +713,33 @@ void GetBonus (statobj_t *check)
             SD_PlaySound (BONUS1SND);
             GivePoints (100);
             gamestate.treasurecount++;
+#ifdef WOLF3D_CYD_PORT
+            cyd_wolf_flash_event(2, 18, 220);
+#endif
             break;
         case    bo_chalice:
             SD_PlaySound (BONUS2SND);
             GivePoints (500);
             gamestate.treasurecount++;
+#ifdef WOLF3D_CYD_PORT
+            cyd_wolf_flash_event(2, 22, 240);
+#endif
             break;
         case    bo_bible:
             SD_PlaySound (BONUS3SND);
             GivePoints (1000);
             gamestate.treasurecount++;
+#ifdef WOLF3D_CYD_PORT
+            cyd_wolf_flash_event(2, 26, 260);
+#endif
             break;
         case    bo_crown:
             SD_PlaySound (BONUS4SND);
             GivePoints (5000);
             gamestate.treasurecount++;
+#ifdef WOLF3D_CYD_PORT
+            cyd_wolf_flash_event(2, 32, 300);
+#endif
             break;
 
         case    bo_clip:

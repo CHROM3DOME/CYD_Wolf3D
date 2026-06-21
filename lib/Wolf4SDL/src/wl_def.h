@@ -123,8 +123,19 @@ void Quit(const char *errorStr, ...);
 #define MAXTICS 10
 #define DEMOTICS        4
 
-#define MAXACTORS       150         // max number of nazis, etc / map
-#define MAXSTATS        400         // max number of lamps, bonus, etc
+#ifdef WOLF3D_CYD_PORT
+#include "../../../include/board_config.h"
+#endif
+
+#ifndef CYD_WOLF_MAXACTORS
+#define CYD_WOLF_MAXACTORS 150
+#endif
+#ifndef CYD_WOLF_MAXSTATS
+#define CYD_WOLF_MAXSTATS 400
+#endif
+
+#define MAXACTORS       CYD_WOLF_MAXACTORS         // max number of nazis, etc / map
+#define MAXSTATS        CYD_WOLF_MAXSTATS          // max number of lamps, bonus, etc
 #define MAXDOORS        64          // max number of sliding doors
 #define MAXWALLTILES    64          // max number of wall tiles
 
@@ -748,7 +759,9 @@ typedef struct statestruct
     statenum_t next; // [FG] statetype states[] array
 } statetype;
 
-extern statetype states[numstates]; // [FG] statetype states[] array
+extern const statetype states[numstates]; // [FG] statetype states[] array
+short StateTicTime(const statetype *state);
+void SetStateTicTime(statenum_t state, short tictime);
 
 //---------------------
 //
@@ -798,7 +811,7 @@ typedef PACKED_STRUCT( objstruct
     activetype  active;
     short       ticcount;
     classtype   obclass;
-    statetype   *state;
+    const statetype   *state;
 
     uint32_t    flags;              // FL_SHOOTABLE, etc
 
@@ -928,7 +941,7 @@ extern  short    centerx;
 extern  int32_t  heightnumerator;
 extern  fixed    scale;
 
-extern  int      dirangle[9];
+extern  const int      dirangle[9];
 
 extern  int      mouseadjustment, mouseadjustment_v;
 extern  int      shootdelta;
@@ -1170,8 +1183,8 @@ typedef struct
 
 
 void    InitHitRect (objtype *ob, unsigned radius);
-void    SpawnNewObj (unsigned tilex, unsigned tiley, statetype *state);
-void    NewState (objtype *ob, statetype *state);
+void    SpawnNewObj (unsigned tilex, unsigned tiley, const statetype *state);
+void    NewState (objtype *ob, const statetype *state);
 
 boolean TryWalk (objtype *ob);
 void    SelectChaseDir (objtype *ob);

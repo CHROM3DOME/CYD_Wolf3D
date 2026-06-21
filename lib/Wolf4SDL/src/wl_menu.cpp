@@ -26,7 +26,7 @@ extern int numEpisodesMissing;
 #define STARTITEM       newgame
 
 // ENDSTRx constants are defined in foreign.h
-char endStrings[9][80] = {
+static const char * const endStrings[9] = {
     ENDSTR1,
     ENDSTR2,
     ENDSTR3,
@@ -152,14 +152,14 @@ CP_iteminfo MainItems = { MENU_X, MENU_Y, lengthof(MainMenu), STARTITEM, 24 },
 #endif
             NewItems  = { NM_X, NM_Y, lengthof(NewMenu), 2, 24 };
 
-int color_hlite[] = {
+const int color_hlite[] = {
     DEACTIVE,
     HIGHLIGHT,
     READHCOLOR,
     0x67
 };
 
-int color_norml[] = {
+const int color_norml[] = {
     DEACTIVE,
     TEXTCOLOR,
     READCOLOR,
@@ -1965,12 +1965,12 @@ DrawCtlScreen (void)
 enum
 { FIRE, STRAFE, RUN, OPEN };
 // [FG] support up to 32 joystick buttons
-char mbarray[32][4] = { "b00", "b01", "b02", "b03", "b04", "b05", "b06", "b07", "b08", "b09",
+const char mbarray[32][4] = { "b00", "b01", "b02", "b03", "b04", "b05", "b06", "b07", "b08", "b09",
                         "b10", "b11", "b12", "b13", "b14", "b15", "b16", "b17", "b18", "b19",
                         "b20", "b21", "b22", "b23", "b24", "b25", "b26", "b27", "b28", "b29",
                         "b30", "b31" };
 // [FG] support up to 32 joystick buttons
-int8_t order[32] = { RUN, OPEN, FIRE, STRAFE, 4, 5, 6, 7, 8, 9,
+const int8_t order[32] = { RUN, OPEN, FIRE, STRAFE, 4, 5, 6, 7, 8, 9,
                     10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
                     20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
                     31, 31 };
@@ -2152,7 +2152,7 @@ DefineKeyMove (void)
 //
 enum
 { FWRD, RIGHT, BKWD, LEFT };
-int moveorder[4] = { LEFT, RIGHT, FWRD, BKWD };
+const int moveorder[4] = { LEFT, RIGHT, FWRD, BKWD };
 
 void
 EnterCtrlData (int index, CustomCtrls * cust, void (*DrawRtn) (int), void (*PrintRtn) (int),

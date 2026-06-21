@@ -28,6 +28,8 @@ loaded into the data segment
 #include <esp_system.h>
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 extern "C" void cyd_wolf3d_status(const char *message);
+extern "C" void cyd_trace_gr_request(int chunk, int32_t compressedBytes);
+extern "C" void cyd_trace_gr_expand(int chunk, int32_t expandedBytes);
 #endif
 
 #define THREEBYTEGRSTARTS
@@ -961,10 +963,7 @@ void CAL_ExpandGrChunk (int chunk, int32_t *source)
     // Sprites need to have shifts made and various other junk
     //
 #ifdef WOLF3D_CYD_PORT
-    char cydChunkStatus[64];
-    snprintf(cydChunkStatus, sizeof(cydChunkStatus), "CA chunk %i size %i heap %u", chunk, expanded, esp_get_free_heap_size());
-    furi_log_print_format(2, "Wolf3D", "%s", cydChunkStatus);
-    cyd_wolf3d_status(cydChunkStatus);
+    cyd_trace_gr_expand(chunk, expanded);
 #endif
     grsegs[chunk]=(byte *) malloc(expanded);
     CHECKMALLOCRESULT(grsegs[chunk]);
@@ -989,7 +988,12 @@ void CA_CacheGrChunk (int chunk)
     int  next;
 
     if (grsegs[chunk])
+    {
+#ifdef WOLF3D_CYD_PORT
+        cyd_trace_gr_request(chunk, 0);
+#endif
         return;                             // already in memory
+    }
 
 //
 // load the chunk into a buffer, either the miscbuffer if it fits, or allocate
@@ -1006,11 +1010,7 @@ void CA_CacheGrChunk (int chunk)
     compressed = GRFILEPOS(next)-pos;
 
 #ifdef WOLF3D_CYD_PORT
-    {
-        char cydCompressedStatus[72];
-        snprintf(cydCompressedStatus, sizeof(cydCompressedStatus), "CA request %i comp %i heap %u", chunk, compressed, esp_get_free_heap_size());
-        furi_log_print_format(2, "Wolf3D", "%s", cydCompressedStatus);
-    }
+    cyd_trace_gr_request(chunk, compressed);
 #endif
 
     lseek(grhandle,pos,SEEK_SET);

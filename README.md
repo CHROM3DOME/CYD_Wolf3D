@@ -1,49 +1,43 @@
-# ESP32-CYD-Tester (Alpha)
+# ESP32-CYD Wolf3D
 
-A simple hardware checkout program for the Elegoo/CYD-style ESP32 display board. It provides a landscape touch menu and matching Serial commands for:
+Wolfenstein 3D running on the classic ESP32 Cheap Yellow Display / ESP32-2432S028R style board.
 
-- TFT colors and animation speed
-- XPT2046 touch drawing
-- SD mount, capacity, write speed, and byte-for-byte verification
-- three-tone audio check through the common GPIO 26 DAC output
-- PWM backlight fade
-- chip, flash, heap, and PSRAM information
-- Wi-Fi network scan
-- SD-based MJPEG video decode and WAV playback
-- automatic run of every test
+This project started as a hardware tester for CYD clones and grew into a purpose-built ESP32 port of the Wolf4SDL engine. The active target is the full commercial Wolfenstein 3D data set (`.WL6`) on an SD card.
 
-## Build and upload
+## Status
 
-Install [PlatformIO Core](https://platformio.org/install/cli), connect the board, then run:
+The current Wolf3D build boots directly into gameplay on the CYD and includes:
 
-```text
-pio run -t upload
-pio device monitor
-```
+- landscape ILI9341 display output
+- touch/input scaffolding for CYD-style controls
+- SD-card loading of Wolf3D data
+- simplified renderer tuned for ESP32 RAM and CPU limits
+- flat-color walls with selected low-resolution cached texture support
+- static decoration impostors and caches
+- visible weapon/HUD build stamp
+- basic DAC/PCM sound output through the common GPIO 26 audio path
+- runtime page-cache and sprite optimizations
 
-The repository now has two firmware targets:
+This is still experimental. The port is optimized for the classic CYD board first, not for compatibility across every ESP32 display module.
 
-- `cyd_esp32` - hardware function tester
-- `cyd_wolf3d` - early Wolfenstein 3D port, auto-detecting `.WL6` or `.WL1` data
-- `cyd_wolf3d_wl1` - strict shareware `.WL1` build, kept as a fallback
+## Hardware target
 
-Build the Wolf3D target with:
+Default wiring targets the common ESP32-2432S028R Cheap Yellow Display layout:
 
-```text
-pio run -e cyd_wolf3d
-```
+- ESP32-WROOM module
+- 320x240 ILI9341 TFT
+- XPT2046 resistive touch
+- microSD slot
+- GPIO 26 DAC audio path
+- optional RGB LED on GPIO 4/16/17
 
-Upload it with:
+CYD clones vary. Board-level settings live in [include/board_config.h](include/board_config.h). TFT bus pins are in [platformio.ini](platformio.ini).
 
-```text
-pio run -e cyd_wolf3d -t upload
-```
+## Game data
 
-## Wolf3D data files
+Game data is not included.
 
-Game data is not included. Copy your Wolfenstein 3D data files to `/wolf3d/` on the SD card. The default `cyd_wolf3d` firmware looks for the full registered `.WL6` set first, then the shareware `.WL1` set.
-
-For the full registered version:
+Copy your legally owned Wolfenstein 3D commercial data files to `/wolf3d/` on a FAT32 SD card:
 
 ```text
 AUDIOHED.WL6
@@ -56,37 +50,125 @@ VGAHEAD.WL6
 VSWAP.WL6
 ```
 
-For the shareware version:
+The code still has some fallback support for `.WL1`, but this port is being tuned for the commercial `.WL6` data set.
 
-```text
-AUDIOHED.WL1
-AUDIOT.WL1
-GAMEMAPS.WL1
-MAPHEAD.WL1
-VGADICT.WL1
-VGAGRAPH.WL1
-VGAHEAD.WL1
-VSWAP.WL1
+Do not commit or redistribute Wolfenstein 3D game data, extracted art, extracted sounds, or generated asset caches based on those commercial files.
+
+## Build requirements
+
+Install:
+
+- [Visual Studio Code](https://code.visualstudio.com/) or another editor
+- [PlatformIO](https://platformio.org/)
+- a USB data cable for the ESP32 board
+
+From the repository root:
+
+```powershell
+pio run
 ```
 
-The current Wolf3D milestone boots the engine and renders frames. Input and Wolf3D sound are deliberately stubbed until boot/render is verified on the classic CYD hardware.
+Upload:
 
-The display also works without a computer after programming. Tap a test in the menu. In the Serial monitor, use `d`, `t`, `s`, `a`, `b`, `m`, `w`, `v` (media), or `r` (run all).
+```powershell
+pio run -t upload
+```
 
-## SD media test
+Open the serial monitor:
 
-Copy `sdcard/test.mjpeg` and `sdcard/test.wav` to the root of a FAT32 SD card, then tap **MEDIA**. The test renders 50 JPEG frames, reports decode FPS and dropped frames, and plays a 22.05 kHz mono PCM WAV through GPIO 26 and the onboard amplifier.
+```powershell
+pio device monitor -b 115200
+```
 
-Regenerate both files with:
+If you use a local wrapper such as `pio.ps1`, keep it outside the repo or leave it ignored.
+
+## Firmware targets
 
 ```text
+cyd_wolf3d      Active Wolf3D CYD port
+cyd_esp32       CYD hardware tester
+cyd_wolf3d_wl1  Shareware-data fallback target
+```
+
+The default PlatformIO environment is `cyd_wolf3d`. Select `cyd_esp32` explicitly when building the hardware tester.
+
+## Build stamp
+
+The Wolf3D HUD displays a four-digit build stamp in the lower-right corner. Change it in [include/board_config.h](include/board_config.h):
+
+```c
+#define CYD_WOLF_BUILD_NUMBER 20
+```
+
+Build `20` appears as `0020`.
+
+## Diagnostics
+
+Two diagnostic systems are available:
+
+- `CYD_WOLF_ENABLE_PERF_LOGS`
+- `CYD_WOLF_RESOURCE_TRACE`
+
+Both are disabled by default for release-style builds. Enable them in [include/board_config.h](include/board_config.h) when profiling frame timing, page-cache misses, sprite activity, and sound requests.
+
+## Hardware tester
+
+The `cyd_esp32` target provides a basic CYD checkout menu for:
+
+- TFT colors and animation
+- touch input
+- SD mount/write verification
+- GPIO 26 audio check
+- PWM backlight fade
+- chip/flash/heap info
+- Wi-Fi scan
+- MJPEG/WAV media tests
+
+Build it with:
+
+```powershell
+pio run -e cyd_esp32
+```
+
+Upload it with:
+
+```powershell
+pio run -e cyd_esp32 -t upload
+```
+
+The optional media test uses the sample files in [sdcard/](sdcard/). Regenerate them with:
+
+```powershell
 python tools/generate_test_media.py
 ```
 
-## Important: confirm the board revision
+## Licensing
 
-The defaults target the common **ESP32-2432S028R** wiring. CYD clones are not fully standardized. All touch, SD, audio, and backlight settings are in `include/board_config.h`; TFT bus pins are build flags in `platformio.ini`. The TFT uses HSPI; touch and SD safely time-share VSPI because their pin sets differ.
+This repository contains modified Wolf4SDL/id Software source code and keeps the upstream license files in [lib/Wolf4SDL/src](lib/Wolf4SDL/src):
 
-If the display is blank, compare the silkscreen/model number and schematic with the pin table before changing code. If touch is mirrored or offset, adjust `TOUCH_SWAP_XY`, `TOUCH_INVERT_X/Y`, and the four raw endpoints in `board_config.h`.
+- [license-gpl.txt](lib/Wolf4SDL/src/license-gpl.txt)
+- [license-id.txt](lib/Wolf4SDL/src/license-id.txt)
 
-The audio test emits analog audio on GPIO 26. It is only audible when that pin is connected to the board's amplifier/speaker path. Do not drive a low-impedance speaker directly from the ESP32 pin.
+The engine/source code is distributed under the applicable upstream licenses. Game data is not included and remains the property of its rights holders.
+
+If you distribute a modified build, keep the corresponding source available and do not redistribute commercial Wolfenstein 3D data.
+
+## Development notes
+
+The port currently favors a playable ESP32 profile over PC accuracy:
+
+- reduced memory reserves
+- direct SD-backed VSWAP page cache
+- tiny hot-page cache for repeated small pages
+- static decoration impostors
+- fast weapon and sprite scaling paths
+- skipped PC hardware setup screens
+- skipped intermission screen to avoid memory pressure
+
+Near-term optimization targets:
+
+- dynamic actor impostors
+- cleaner physical controls
+- optional in-game settings
+- improved sound event coverage
+- display pipeline tuning

@@ -535,6 +535,38 @@ LevelCompleted (void)
 #endif
     };
 
+#ifdef WOLF3D_CYD_PORT
+    kr = sr = tr = 0;
+    if (gamestate.killtotal)
+        kr = (gamestate.killcount * 100) / gamestate.killtotal;
+    if (gamestate.secrettotal)
+        sr = (gamestate.secretcount * 100) / gamestate.secrettotal;
+    if (gamestate.treasuretotal)
+        tr = (gamestate.treasurecount * 100) / gamestate.treasuretotal;
+
+    sec = gamestate.TimeCount / 70;
+    if (sec > 99 * 60)
+        sec = 99 * 60;
+
+    if (gamestate.mapon < 8 &&
+        gamestate.TimeCount < parTimes[gamestate.episode * 10 + mapon].time * 4200)
+        timeleft = (int32_t)((parTimes[gamestate.episode * 10 + mapon].time * 4200) / 70 - sec);
+
+    bonus = (int32_t)timeleft * PAR_AMOUNT +
+        (PERCENT100AMT * (kr >= 100)) +
+        (PERCENT100AMT * (sr >= 100)) +
+        (PERCENT100AMT * (tr >= 100));
+    GivePoints(bonus);
+
+    LevelRatios[mapon].kill = kr;
+    LevelRatios[mapon].secret = sr;
+    LevelRatios[mapon].treasure = tr;
+    LevelRatios[mapon].time = sec;
+
+    VW_FadeOut();
+    return;
+#endif
+
     CacheLump (LEVELEND_LUMP_START, LEVELEND_LUMP_END);
     ClearSplitVWB ();           // set up for double buffering in split screen
     VWB_Bar (0, 0, 320, screenHeight / scaleFactor - STATUSLINES + 1, VIEWCOLOR);

@@ -48,14 +48,20 @@ unsigned scaleFactor;
 boolean	 screenfaded;
 unsigned bordercolor;
 
+#ifndef WOLF3D_CYD_PORT
 SDL_Color palette1[256], palette2[256];
+#endif
 SDL_Color curpal[256];
 
 
 #define CASSERT(x) extern int ASSERT_COMPILE[((x) != 0) * 2 - 1];
 #define RGB(r, g, b) {(r)*255/63, (g)*255/63, (b)*255/63, 255}
 
+#ifdef WOLF3D_CYD_PORT
+const SDL_Color gamepal[]={
+#else
 SDL_Color gamepal[]={
+#endif
 #ifdef SPEAR
     #include "sodpal.inc"
 #else
@@ -320,7 +326,7 @@ void VL_Flip()
 =================
 */
 
-void VL_SetPalette (SDL_Color *palette, bool forceupdate)
+void VL_SetPalette (const SDL_Color *palette, bool forceupdate)
 {
     memcpy(curpal, palette, sizeof(SDL_Color) * 256);
 
@@ -367,6 +373,13 @@ void VL_GetPalette (SDL_Color *palette)
 
 void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 {
+#ifdef WOLF3D_CYD_PORT
+    (void)start;
+    (void)end;
+    (void)steps;
+    VL_FillPalette(red * 255 / 63, green * 255 / 63, blue * 255 / 63);
+    screenfaded = true;
+#else
 	int		    i,j,orig,delta;
 	SDL_Color   *origptr, *newptr;
 
@@ -409,6 +422,7 @@ void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 	VL_FillPalette (red,green,blue);
 
 	screenfaded = true;
+#endif
 }
 
 
@@ -420,8 +434,15 @@ void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 =================
 */
 
-void VL_FadeIn (int start, int end, SDL_Color *palette, int steps)
+void VL_FadeIn (int start, int end, const SDL_Color *palette, int steps)
 {
+#ifdef WOLF3D_CYD_PORT
+    (void)start;
+    (void)end;
+    (void)steps;
+    VL_SetPalette(palette, true);
+    screenfaded = false;
+#else
 	int i,j,delta;
 
 	VL_WaitVBL(1);
@@ -451,6 +472,7 @@ void VL_FadeIn (int start, int end, SDL_Color *palette, int steps)
 //
 	VL_SetPalette (palette, true);
 	screenfaded = false;
+#endif
 }
 
 /*

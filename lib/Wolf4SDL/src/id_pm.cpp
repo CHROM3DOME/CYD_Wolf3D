@@ -20,7 +20,19 @@ uint8_t **PMPages;
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 extern "C" void cyd_wolf3d_status(const char *message);
 extern "C" uint32_t cyd_perf_micros(void);
+extern "C" void cyd_trace_pm_hit(int page);
+extern "C" void cyd_trace_pm_miss(int page, uint32_t bytes, uint32_t readUs);
 namespace {
+#ifndef CYD_WOLF_HOT_PAGE_CACHE
+#define CYD_WOLF_HOT_PAGE_CACHE 0
+#endif
+#ifndef CYD_WOLF_HOT_PAGE_CACHE_SLOTS
+#define CYD_WOLF_HOT_PAGE_CACHE_SLOTS 0
+#endif
+#ifndef CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES
+#define CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES 0
+#endif
+
 constexpr int PM_CACHE_SLOTS = 3;
 constexpr int PM_PREALLOC_SLOTS = 3;
 constexpr int PM_EMPTY_PAGE_SIZE = 1;
@@ -43,12 +55,66 @@ struct PMCacheSlot {
     uint8_t *data = nullptr;
     uint32_t capacity = 0;
     uint32_t lastUse = 0;
+    bool pinned = false;
 };
 
 PMCacheSlot PMCache[PM_CACHE_SLOTS];
 
+#if CYD_WOLF_HOT_PAGE_CACHE && CYD_WOLF_HOT_PAGE_CACHE_SLOTS > 0
+struct PMHotPageSlot {
+    int page = -1;
+    uint8_t *data = nullptr;
+    uint32_t size = 0;
+    uint32_t capacity = 0;
+    uint32_t lastUse = 0;
+};
+
+PMHotPageSlot PMHotPages[CYD_WOLF_HOT_PAGE_CACHE_SLOTS];
+
+void PM_ClearHotPages()
+{
+    for(int i = 0; i < CYD_WOLF_HOT_PAGE_CACHE_SLOTS; ++i)
+    {
+        free(PMHotPages[i].data);
+        PMHotPages[i].data = nullptr;
+        PMHotPages[i].capacity = 0;
+        PMHotPages[i].size = 0;
+        PMHotPages[i].page = -1;
+        PMHotPages[i].lastUse = 0;
+    }
+}
+
+uint8_t *PM_FindHotPage(int page)
+{
+    for(int i = 0; i < CYD_WOLF_HOT_PAGE_CACHE_SLOTS; ++i)
+    {
+        if(PMHotPages[i].page == page)
+        {
+            PMHotPages[i].lastUse = ++PMCacheClock;
+            return PMHotPages[i].data;
+        }
+    }
+    return nullptr;
+}
+
+int PM_ChooseHotPageSlot()
+{
+    int best = 0;
+    for(int i = 0; i < CYD_WOLF_HOT_PAGE_CACHE_SLOTS; ++i)
+    {
+        if(PMHotPages[i].page < 0) return i;
+        if(PMHotPages[i].lastUse < PMHotPages[best].lastUse) best = i;
+    }
+    return best;
+}
+#else
+void PM_ClearHotPages() {}
+uint8_t *PM_FindHotPage(int) { return nullptr; }
+#endif
+
 void PM_ClearCache()
 {
+    PM_ClearHotPages();
     for(int i = 0; i < PM_CACHE_SLOTS; ++i)
     {
         free(PMCache[i].data);
@@ -56,6 +122,7 @@ void PM_ClearCache()
         PMCache[i].capacity = 0;
         PMCache[i].page = -1;
         PMCache[i].lastUse = 0;
+        PMCache[i].pinned = false;
     }
 }
 
@@ -105,14 +172,60 @@ void PM_LogStats()
 
 int PM_ChooseSlot()
 {
-    int best = 0;
+    int best = -1;
     for(int i = 0; i < PM_CACHE_SLOTS; ++i)
     {
         if(PMCache[i].page < 0) return i;
-        if(PMCache[i].lastUse < PMCache[best].lastUse) best = i;
+        if(PMCache[i].pinned) continue;
+        if(best < 0 || PMCache[i].lastUse < PMCache[best].lastUse) best = i;
     }
     return best;
 }
+
+bool PM_ReadPageData(int page, uint8_t *target, uint32_t size, uint32_t *readUs)
+{
+    FILE *file = fopen(PMPageFileName, "rb");
+    if(!file) CA_CannotOpen(PMPageFileName);
+    uint32_t readStartUs = cyd_perf_micros();
+    fseek(file, PMPageOffsets[page], SEEK_SET);
+    bool ok = fread(target, 1, size, file) == size;
+    fclose(file);
+    if(readUs) *readUs = cyd_perf_micros() - readStartUs;
+    return ok;
+}
+
+#if CYD_WOLF_HOT_PAGE_CACHE && CYD_WOLF_HOT_PAGE_CACHE_SLOTS > 0
+uint8_t *PM_LoadHotPage(int page, uint32_t size)
+{
+    if(size == 0 || size > CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES)
+        return nullptr;
+
+    int slotIndex = PM_ChooseHotPageSlot();
+    PMHotPageSlot &slot = PMHotPages[slotIndex];
+    if(slot.capacity < size)
+    {
+        uint8_t *newData = (uint8_t *) realloc(slot.data, size);
+        if(!newData)
+            return nullptr;
+        slot.data = newData;
+        slot.capacity = size;
+    }
+
+    uint32_t readUs = 0;
+    if(!PM_ReadPageData(page, slot.data, size, &readUs))
+        Quit("Could not read VSWAP hot page %i", page);
+
+    slot.page = page;
+    slot.size = size;
+    slot.lastUse = ++PMCacheClock;
+    PMStatMisses++;
+    PMStatReadUs += readUs;
+    cyd_trace_pm_miss(page, size, readUs);
+    return slot.data;
+}
+#else
+uint8_t *PM_LoadHotPage(int, uint32_t) { return nullptr; }
+#endif
 }
 #endif
 
@@ -302,7 +415,7 @@ uint32_t PM_GetPageSize(int page)
     return PMPageSizes ? PMPageSizes[page] : 0;
 }
 
-uint8_t *PM_GetPage(int page)
+static uint8_t *PM_GetPageInternal(int page, bool allowHotPageCache)
 {
     if(page < 0 || page >= ChunksInFile)
         Quit("PM_GetPage: Tried to access illegal page: %i", page);
@@ -310,12 +423,32 @@ uint8_t *PM_GetPage(int page)
     uint32_t size = PM_GetPageSize(page);
     if(size == 0) return PMEmptyPage;
 
+    if(allowHotPageCache)
+    {
+        uint8_t *hotPage = PM_FindHotPage(page);
+        if(hotPage)
+        {
+            PMStatHits++;
+            cyd_trace_pm_hit(page);
+            PM_LogStats();
+            return hotPage;
+        }
+
+        hotPage = PM_LoadHotPage(page, size);
+        if(hotPage)
+        {
+            PM_LogStats();
+            return hotPage;
+        }
+    }
+
     for(int i = 0; i < PM_CACHE_SLOTS; ++i)
     {
         if(PMCache[i].page == page)
         {
             PMCache[i].lastUse = ++PMCacheClock;
             PMStatHits++;
+            cyd_trace_pm_hit(page);
             PM_LogStats();
             return PMCache[i].data;
         }
@@ -323,6 +456,13 @@ uint8_t *PM_GetPage(int page)
 
     PMStatMisses++;
     int slotIndex = PM_ChooseSlot();
+    if(slotIndex < 0)
+    {
+        furi_log_print_format(2, "Wolf3D",
+            "PM no unpinned cache slot for page %i size %u heap %u max %u",
+            page, (unsigned)size, esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return nullptr;
+    }
     PMCacheSlot &slot = PMCache[slotIndex];
     if(slot.capacity < size)
     {
@@ -339,6 +479,7 @@ uint8_t *PM_GetPage(int page)
         slot.data = nullptr;
         slot.capacity = 0;
         slot.page = -1;
+        slot.pinned = false;
 
         uint32_t allocSize = size;
         if(freeHeap >= PM_PREALLOC_SIZE + PM_MIN_FREE_AFTER_ALLOC &&
@@ -354,22 +495,50 @@ uint8_t *PM_GetPage(int page)
         slot.capacity = allocSize;
     }
 
-    FILE *file = fopen(PMPageFileName, "rb");
-    if(!file) CA_CannotOpen(PMPageFileName);
-    uint32_t readStartUs = cyd_perf_micros();
-    fseek(file, PMPageOffsets[page], SEEK_SET);
-    if(fread(slot.data, 1, size, file) != size)
-    {
-        fclose(file);
+    uint32_t readUs = 0;
+    if(!PM_ReadPageData(page, slot.data, size, &readUs))
         Quit("Could not read VSWAP page %i", page);
-    }
-    fclose(file);
-    PMStatReadUs += cyd_perf_micros() - readStartUs;
+    PMStatReadUs += readUs;
+    cyd_trace_pm_miss(page, size, readUs);
 
     slot.page = page;
     slot.lastUse = ++PMCacheClock;
+    slot.pinned = false;
     PM_LogStats();
     return slot.data;
+}
+
+uint8_t *PM_GetPage(int page)
+{
+    return PM_GetPageInternal(page, true);
+}
+
+uint8_t *PM_PinPage(int page)
+{
+    uint8_t *data = PM_GetPageInternal(page, false);
+    for(int i = 0; i < PM_CACHE_SLOTS; ++i)
+    {
+        if(PMCache[i].page == page)
+        {
+            PMCache[i].pinned = true;
+            PMCache[i].lastUse = ++PMCacheClock;
+            break;
+        }
+    }
+    return data;
+}
+
+void PM_UnpinPage(int page)
+{
+    for(int i = 0; i < PM_CACHE_SLOTS; ++i)
+    {
+        if(PMCache[i].page == page)
+        {
+            PMCache[i].pinned = false;
+            PMCache[i].lastUse = ++PMCacheClock;
+            break;
+        }
+    }
 }
 
 uint8_t *PM_GetEnd()

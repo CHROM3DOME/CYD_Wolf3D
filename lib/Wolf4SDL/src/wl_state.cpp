@@ -38,8 +38,8 @@ static const dirtype diagonal[9][9] =
 
 
 
-void    SpawnNewObj (unsigned tilex, unsigned tiley, statetype *state);
-void    NewState (objtype *ob, statetype *state);
+void    SpawnNewObj (unsigned tilex, unsigned tiley, const statetype *state);
+void    NewState (objtype *ob, const statetype *state);
 
 boolean TryWalk (objtype *ob);
 void    MoveObj (objtype *ob, int32_t move);
@@ -77,14 +77,59 @@ boolean CheckSight (objtype *ob);
 ===================
 */
 
-void SpawnNewObj (unsigned tilex, unsigned tiley, statetype *state)
+struct state_tic_override_t
+{
+    statenum_t state;
+    short tictime;
+};
+
+static state_tic_override_t stateTicOverrides[12];
+static byte stateTicOverrideCount;
+
+short StateTicTime(const statetype *state)
+{
+    if (!state)
+        return 0;
+
+    ptrdiff_t index = state - states;
+    if (index >= 0 && index < numstates)
+    {
+        for (byte i = 0; i < stateTicOverrideCount; ++i)
+            if (stateTicOverrides[i].state == (statenum_t)index)
+                return stateTicOverrides[i].tictime;
+    }
+
+    return state->tictime;
+}
+
+void SetStateTicTime(statenum_t state, short tictime)
+{
+    for (byte i = 0; i < stateTicOverrideCount; ++i)
+    {
+        if (stateTicOverrides[i].state == state)
+        {
+            stateTicOverrides[i].tictime = tictime;
+            return;
+        }
+    }
+
+    if (stateTicOverrideCount < lengthof(stateTicOverrides))
+    {
+        stateTicOverrides[stateTicOverrideCount].state = state;
+        stateTicOverrides[stateTicOverrideCount].tictime = tictime;
+        ++stateTicOverrideCount;
+    }
+}
+
+void SpawnNewObj (unsigned tilex, unsigned tiley, const statetype *state)
 {
     GetNewActor ();
     newobj->state = state;
-    if (state->tictime)
+    short tictime = StateTicTime(state);
+    if (tictime)
         newobj->ticcount = DEMOCHOOSE_ORIG_SDL(
-                US_RndT () % state->tictime,
-                US_RndT () % state->tictime + 1);     // Chris' moonwalk bugfix ;D
+                US_RndT () % tictime,
+                US_RndT () % tictime + 1);     // Chris' moonwalk bugfix ;D
     else
         newobj->ticcount = 0;
 
@@ -111,10 +156,10 @@ void SpawnNewObj (unsigned tilex, unsigned tiley, statetype *state)
 ===================
 */
 
-void NewState (objtype *ob, statetype *state)
+void NewState (objtype *ob, const statetype *state)
 {
     ob->state = state;
-    ob->ticcount = state->tictime;
+    ob->ticcount = StateTicTime(state);
 }
 
 

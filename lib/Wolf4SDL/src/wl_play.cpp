@@ -103,7 +103,7 @@ objtype dummyobj;
 //
 // LIST OF SONGS FOR EACH VERSION
 //
-int songs[] = {
+const int songs[] = {
 #ifndef SPEAR
     //
     // Episode One
@@ -447,22 +447,26 @@ void PollControls (void)
 //
     PollKeyboardButtons ();
 
+#ifndef WOLF3D_CYD_PORT
     if (mouseenabled)
         PollMouseButtons ();
 
     if (joystickenabled)
         PollJoystickButtons ();
+#endif
 
 //
 // get movements
 //
     PollKeyboardMove ();
 
+#ifndef WOLF3D_CYD_PORT
     if (mouseenabled)
         PollMouseMove ();
 
     if (joystickenabled)
         PollJoystickMove ();
+#endif
 
 //
 // bound movement to a maximum
@@ -670,6 +674,7 @@ void CheckKeys (void)
         return;
     }
 
+#ifndef WOLF3D_CYD_PORT
 //
 // F1-F7/ESC to enter control panel
 //
@@ -708,6 +713,8 @@ void CheckKeys (void)
         lasttimecount = GetTimeCount();
         return;
     }
+
+#endif
 
 //
 // TAB-? debug keys
@@ -936,11 +943,31 @@ void ContinueMusic (int offs)
 #define WHITETICS       6
 
 
+#ifndef WOLF3D_CYD_PORT
 SDL_Color redshifts[NUMREDSHIFTS][256];
 SDL_Color whiteshifts[NUMWHITESHIFTS][256];
+#endif
 
 int damagecount, bonuscount;
 boolean palshifted;
+
+#ifdef WOLF3D_CYD_PORT
+extern "C" { volatile int cyd_flash_kind = 0;
+volatile int cyd_flash_level = 0;
+volatile uint32_t cyd_flash_until = 0; }
+extern "C" void cyd_hw_rgb_flash_kind(int kind, int level);
+
+extern "C" void cyd_wolf_flash_event(int kind, int level, int durationMs)
+{
+    uint32_t now = SDL_GetTicks();
+    if(kind < cyd_flash_kind && now < cyd_flash_until)
+        return;
+    cyd_flash_kind = kind;
+    cyd_flash_level = level;
+    cyd_flash_until = now + durationMs;
+    cyd_hw_rgb_flash_kind(kind, level);
+}
+#endif
 
 /*
 =====================
@@ -952,13 +979,14 @@ boolean palshifted;
 
 void InitRedShifts (void)
 {
+#ifdef WOLF3D_CYD_PORT
+    // CYD draws damage/bonus flashes directly in the framebuffer and mirrors
+    // them on the RGB LED. Avoid the original 9 KB RAM palette-shift tables.
+    return;
+#else
     SDL_Color *workptr, *baseptr;
     int i, j, delta;
 
-
-//
-// fade through intermediate frames
-//
     for (i = 1; i <= NUMREDSHIFTS; i++)
     {
         workptr = redshifts[i - 1];
@@ -994,6 +1022,7 @@ void InitRedShifts (void)
             workptr++;
         }
     }
+#endif
 }
 
 
@@ -1009,6 +1038,11 @@ void ClearPaletteShifts (void)
 {
     bonuscount = damagecount = 0;
     palshifted = false;
+#ifdef WOLF3D_CYD_PORT
+    cyd_flash_kind = 0;
+    cyd_flash_level = 0;
+    cyd_flash_until = 0;
+#endif
 }
 
 
@@ -1023,6 +1057,9 @@ void ClearPaletteShifts (void)
 void StartBonusFlash (void)
 {
     bonuscount = NUMWHITESHIFTS * WHITETICS;    // white shift palette
+#ifdef WOLF3D_CYD_PORT
+    cyd_wolf_flash_event(1, bonuscount, 180);
+#endif
 }
 
 
@@ -1037,6 +1074,9 @@ void StartBonusFlash (void)
 void StartDamageFlash (int damage)
 {
     damagecount += damage;
+#ifdef WOLF3D_CYD_PORT
+    cyd_wolf_flash_event(3, damage, damage > 30 ? 320 : 220);
+#endif
 }
 
 
@@ -1078,6 +1118,11 @@ void UpdatePaletteShifts (void)
     else
         red = 0;
 
+#ifdef WOLF3D_CYD_PORT
+    palshifted = false;
+    (void)red;
+    (void)white;
+#else
     if (red)
     {
         VL_SetPalette (redshifts[red - 1], false);
@@ -1093,6 +1138,7 @@ void UpdatePaletteShifts (void)
         VL_SetPalette (gamepal, false);        // back to normal
         palshifted = false;
     }
+#endif
 }
 
 
@@ -1195,13 +1241,13 @@ void DoActor (objtype * ob)
             return;
         }
 
-        if (!ob->state->tictime)
+        if (!StateTicTime(ob->state))
         {
             ob->ticcount = 0;
             goto think;
         }
 
-        ob->ticcount += ob->state->tictime;
+        ob->ticcount += StateTicTime(ob->state);
     }
 
 think:

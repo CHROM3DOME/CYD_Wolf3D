@@ -37,10 +37,10 @@
 */
 
 
-dirtype dirtable[9] = {northwest,north,northeast,west,nodir,east,
+const dirtype dirtable[9] = {northwest,north,northeast,west,nodir,east,
     southwest,south,southeast};
 
-short starthitpoints[4][NUMENEMIES] =
+const short starthitpoints[4][NUMENEMIES] =
 //
 // BABY MODE
 //
@@ -681,7 +681,7 @@ void SpawnTrans (int tilex, int tiley)
     //        word tile;
 
     if (SoundBlasterPresent && DigiMode != sds_Off)
-        states[s_transdie01].tictime = 105;
+        SetStateTicTime(s_transdie01, 105);
 
     SpawnNewObj (tilex,tiley,&states[s_transstand]);
     newobj->obclass = transobj;
@@ -703,7 +703,7 @@ void SpawnTrans (int tilex, int tiley)
 void SpawnUber (int tilex, int tiley)
 {
     if (SoundBlasterPresent && DigiMode != sds_Off)
-        states[s_uberdie01].tictime = 70;
+        SetStateTicTime(s_uberdie01, 70);
 
     SpawnNewObj (tilex,tiley,&states[s_uberstand]);
     newobj->obclass = uberobj;
@@ -747,7 +747,7 @@ void T_UShoot (objtype *ob)
 void SpawnWill (int tilex, int tiley)
 {
     if (SoundBlasterPresent && DigiMode != sds_Off)
-        states[s_willdie2].tictime = 70;
+        SetStateTicTime(s_willdie2, 70);
 
     SpawnNewObj (tilex,tiley,&states[s_willstand]);
     newobj->obclass = willobj;
@@ -867,7 +867,7 @@ void T_Will (objtype *ob)
 void SpawnDeath (int tilex, int tiley)
 {
     if (SoundBlasterPresent && DigiMode != sds_Off)
-        states[s_deathdie2].tictime = 105;
+        SetStateTicTime(s_deathdie2, 105);
 
     SpawnNewObj (tilex,tiley,&states[s_deathstand]);
     newobj->obclass = deathobj;
@@ -973,7 +973,7 @@ void A_Breathing (objtype *)
 void SpawnAngel (int tilex, int tiley)
 {
     if (SoundBlasterPresent && DigiMode != sds_Off)
-        states[s_angeldie11].tictime = 105;
+        SetStateTicTime(s_angeldie11, 105);
 
     SpawnNewObj (tilex,tiley,&states[s_angelstand]);
     newobj->obclass = angelobj;
@@ -1174,9 +1174,9 @@ void SpawnGhosts (int which, int tilex, int tiley)
 void SpawnSchabbs (int tilex, int tiley)
 {
     if (DigiMode != sds_Off)
-        states[s_schabbdie2].tictime = 140;
+        SetStateTicTime(s_schabbdie2, 140);
     else
-        states[s_schabbdie2].tictime = 5;
+        SetStateTicTime(s_schabbdie2, 5);
 
     SpawnNewObj (tilex,tiley,&states[s_schabbstand]);
     newobj->speed = SPDPATROL;
@@ -1201,9 +1201,9 @@ void SpawnSchabbs (int tilex, int tiley)
 void SpawnGift (int tilex, int tiley)
 {
     if (DigiMode != sds_Off)
-        states[s_giftdie2].tictime = 140;
+        SetStateTicTime(s_giftdie2, 140);
     else
-        states[s_giftdie2].tictime = 5;
+        SetStateTicTime(s_giftdie2, 5);
 
     SpawnNewObj (tilex,tiley,&states[s_giftstand]);
     newobj->speed = SPDPATROL;
@@ -1228,9 +1228,9 @@ void SpawnGift (int tilex, int tiley)
 void SpawnFat (int tilex, int tiley)
 {
     if (DigiMode != sds_Off)
-        states[s_fatdie2].tictime = 140;
+        SetStateTicTime(s_fatdie2, 140);
     else
-        states[s_fatdie2].tictime = 5;
+        SetStateTicTime(s_fatdie2, 5);
 
     SpawnNewObj (tilex,tiley,&states[s_fatstand]);
     newobj->speed = SPDPATROL;
@@ -1622,9 +1622,9 @@ void T_Fat (objtype *ob)
 void SpawnFakeHitler (int tilex, int tiley)
 {
     if (DigiMode != sds_Off)
-        states[s_hitlerdie2].tictime = 140;
+        SetStateTicTime(s_hitlerdie2, 140);
     else
-        states[s_hitlerdie2].tictime = 5;
+        SetStateTicTime(s_hitlerdie2, 5);
 
     SpawnNewObj (tilex,tiley,&states[s_fakestand]);
     newobj->speed = SPDPATROL;
@@ -1649,9 +1649,9 @@ void SpawnFakeHitler (int tilex, int tiley)
 void SpawnHitler (int tilex, int tiley)
 {
     if (DigiMode != sds_Off)
-        states[s_hitlerdie2].tictime = 140;
+        SetStateTicTime(s_hitlerdie2, 140);
     else
-        states[s_hitlerdie2].tictime = 5;
+        SetStateTicTime(s_hitlerdie2, 5);
 
 
     SpawnNewObj (tilex,tiley,&states[s_mechastand]);

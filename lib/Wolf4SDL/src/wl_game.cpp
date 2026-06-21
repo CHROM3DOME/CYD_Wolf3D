@@ -49,7 +49,7 @@ int ffDataTopLeft, ffDataTopRight, ffDataBottomLeft, ffDataBottomRight;
 //
 // ELEVATOR BACK MAPS - REMEMBER (-1)!!
 //
-int ElevatorBackTo[]={1,1,7,3,5,3};
+const int ElevatorBackTo[]={1,1,7,3,5,3};
 
 void SetupGameLevel (void);
 void DrawPlayScreen (void);
@@ -85,7 +85,7 @@ void GameLoop (void);
 
 int leftchannel, rightchannel;
 #define ATABLEMAX 15
-byte righttable[ATABLEMAX][ATABLEMAX * 2] = {
+const byte righttable[ATABLEMAX][ATABLEMAX * 2] = {
 { 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 6, 0, 0, 0, 0, 0, 1, 3, 5, 8, 8, 8, 8, 8, 8, 8, 8},
 { 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 6, 4, 0, 0, 0, 0, 0, 2, 4, 6, 8, 8, 8, 8, 8, 8, 8, 8},
 { 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 4, 1, 0, 0, 0, 1, 2, 4, 6, 8, 8, 8, 8, 8, 8, 8, 8},
@@ -102,7 +102,7 @@ byte righttable[ATABLEMAX][ATABLEMAX * 2] = {
 { 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8},
 { 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8}
 };
-byte lefttable[ATABLEMAX][ATABLEMAX * 2] = {
+const byte lefttable[ATABLEMAX][ATABLEMAX * 2] = {
 { 8, 8, 8, 8, 8, 8, 8, 8, 5, 3, 1, 0, 0, 0, 0, 0, 6, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8},
 { 8, 8, 8, 8, 8, 8, 8, 8, 6, 4, 2, 0, 0, 0, 0, 0, 4, 6, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8},
 { 8, 8, 8, 8, 8, 8, 8, 8, 6, 4, 2, 1, 0, 0, 0, 1, 4, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8},
@@ -1502,9 +1502,11 @@ startplayloop:
 
                     ClearMemory ();
 
+#ifndef WOLF3D_CYD_PORT
                     CheckHighScore (gamestate.score,gamestate.mapon+1);
                     strcpy(MainMenu[viewscores].string,STR_VS);
                     MainMenu[viewscores].routine = CP_ViewScores;
+#endif
                     return;
                 }
 #endif
@@ -1568,9 +1570,11 @@ startplayloop:
 
                 ClearMemory ();
 
+#ifndef WOLF3D_CYD_PORT
                 CheckHighScore (gamestate.score,gamestate.mapon+1);
                 strcpy(MainMenu[viewscores].string,STR_VS);
                 MainMenu[viewscores].routine = CP_ViewScores;
+#endif
                 return;
 
             case ex_victorious:
@@ -1586,9 +1590,11 @@ startplayloop:
 
                 ClearMemory ();
 
+#ifndef WOLF3D_CYD_PORT
                 CheckHighScore (gamestate.score,gamestate.mapon+1);
                 strcpy(MainMenu[viewscores].string,STR_VS);
                 MainMenu[viewscores].routine = CP_ViewScores;
+#endif
                 return;
 
             default:

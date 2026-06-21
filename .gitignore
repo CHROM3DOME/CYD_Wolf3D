@@ -18,3 +18,7 @@ monitor.ps1
 *.user
 Thumbs.db
 .DS_Store
+
+# Local serial/debug captures
+monitor-log.txt
+*.log

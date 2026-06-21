@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <limits.h>
 
 #include <SDL.h>
 
@@ -17,6 +18,7 @@
 #undef mkdir
 
 extern SDL_Surface *screenBuffer;
+extern SDL_Color curpal[256];
 extern "C" void cyd_set_palette(const uint8_t *rgb, int first, int count);
 extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height, int pitch);
 
@@ -29,6 +31,7 @@ struct SDL_Joystick {};
 static SDL_Window windowObject;
 static SDL_Renderer rendererObject;
 static SDL_Texture textureObject;
+static int cydPaletteToken;
 
 namespace {
 constexpr int eventQueueSize = 16;
@@ -36,6 +39,14 @@ SDL_Event eventQueue[eventQueueSize];
 int eventHead = 0;
 int eventTail = 0;
 bool heldKeys[256] = {};
+
+SDL_Palette *cydPalette() {
+  return reinterpret_cast<SDL_Palette *>(&cydPaletteToken);
+}
+
+bool isCydPalette(SDL_Palette *palette) {
+  return palette == cydPalette();
+}
 
 bool queueIsEmpty() {
   return eventHead == eventTail;
@@ -200,7 +211,12 @@ extern "C" SDL_Surface *SDL_CreateRGBSurface(uint32_t, int w, int h, int, uint32
 extern "C" void SDL_FreeSurface(SDL_Surface *surface) {
   if (!surface) return;
   free(surface->pixels);
-  if (surface->format) { if (surface->format->palette && --surface->format->palette->refcount <= 0) free(surface->format->palette); free(surface->format); }
+  if (surface->format) {
+    if (surface->format->palette && !isCydPalette(surface->format->palette) &&
+        --surface->format->palette->refcount <= 0)
+      free(surface->format->palette);
+    free(surface->format);
+  }
   free(surface);
 }
 extern "C" int SDL_LockSurface(SDL_Surface *) { return 0; }
@@ -227,15 +243,16 @@ extern "C" int SDL_FillRect(SDL_Surface *dest, const SDL_Rect *rect, uint32_t co
 extern "C" int SDL_SaveBMP(SDL_Surface *, const char *) { return -1; }
 
 extern "C" SDL_Palette *SDL_AllocPalette(int count) {
-  SDL_Palette *palette = static_cast<SDL_Palette *>(calloc(1, sizeof(SDL_Palette)));
-  if (palette) { palette->ncolors = min(count, 256); palette->refcount = 1; }
-  return palette;
+  (void)count;
+  return cydPalette();
 }
-extern "C" void SDL_FreePalette(SDL_Palette *palette) { if (palette && --palette->refcount <= 0) free(palette); }
+extern "C" void SDL_FreePalette(SDL_Palette *palette) {
+  if (!palette || isCydPalette(palette)) return;
+  if (--palette->refcount <= 0) free(palette);
+}
 extern "C" int SDL_SetPaletteColors(SDL_Palette *palette, const SDL_Color *colors, int first, int count) {
   if (!palette || !colors) return -1;
   count = min(count, 256 - first);
-  memcpy(&palette->colors[first], colors, count * sizeof(SDL_Color));
   uint8_t rgb[256 * 3];
   for (int i = 0; i < count; ++i) { rgb[i*3] = colors[i].r; rgb[i*3+1] = colors[i].g; rgb[i*3+2] = colors[i].b; }
   cyd_set_palette(rgb, first, count);
@@ -243,13 +260,16 @@ extern "C" int SDL_SetPaletteColors(SDL_Palette *palette, const SDL_Color *color
 }
 extern "C" int SDL_SetSurfacePalette(SDL_Surface *surface, SDL_Palette *palette) {
   if (!surface || !surface->format) return -1;
-  surface->format->palette = palette; if (palette) ++palette->refcount; return 0;
+  surface->format->palette = palette ? palette : cydPalette();
+  if (surface->format->palette && !isCydPalette(surface->format->palette))
+    ++surface->format->palette->refcount;
+  return 0;
 }
 extern "C" uint32_t SDL_MapRGB(SDL_PixelFormat *format, uint8_t r, uint8_t g, uint8_t b) {
-  if (!format || !format->palette) return 0;
+  (void)format;
   int best = 0, distance = INT_MAX;
-  for (int i = 0; i < format->palette->ncolors; ++i) {
-    int dr = format->palette->colors[i].r-r, dg = format->palette->colors[i].g-g, db = format->palette->colors[i].b-b;
+  for (int i = 0; i < 256; ++i) {
+    int dr = curpal[i].r-r, dg = curpal[i].g-g, db = curpal[i].b-b;
     int candidate = dr*dr + dg*dg + db*db; if (candidate < distance) { distance = candidate; best = i; }
   }
   return best;

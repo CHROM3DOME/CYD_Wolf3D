@@ -55,12 +55,12 @@ static int GetShadeDefID()
 
 // Returns the palette index of the nearest matching color of the
 // given RGB color in given palette
-byte GetColor(byte red, byte green, byte blue, SDL_Color *palette)
+byte GetColor(byte red, byte green, byte blue, const SDL_Color *palette)
 {
     byte mincol = 0;
     double mindist = 200000.F, curdist, DRed, DGreen, DBlue;
 
-    SDL_Color *palPtr = palette;
+    const SDL_Color *palPtr = palette;
 
     for(int col = 0; col < 256; col++, palPtr++)
     {
@@ -80,10 +80,10 @@ byte GetColor(byte red, byte green, byte blue, SDL_Color *palette)
 // Fade all colors in 32 steps down to the destination-RGB
 // (use gray for fogging, black for standard shading)
 void GenerateShadeTable(byte destRed, byte destGreen, byte destBlue,
-                        SDL_Color *palette, int fog)
+                        const SDL_Color *palette, int fog)
 {
     double curRed, curGreen, curBlue, redStep, greenStep, blueStep;
-    SDL_Color *palPtr = palette;
+    const SDL_Color *palPtr = palette;
 
     // Set the fog-flag
     LSHADE_flag=fog;
