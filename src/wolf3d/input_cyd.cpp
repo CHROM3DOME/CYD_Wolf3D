@@ -13,6 +13,10 @@
 
 #include "wl_def.h"
 
+#if CYD_MCP23017_ENABLE
+#include <Wire.h>
+#endif
+
 class HardwareSerial {
 public:
   int available(void);
@@ -115,7 +119,86 @@ extern "C" void cyd_native_clear_keys(void) {
   for (int i = 0; i < 256; ++i) heldKeys[i] = false;
 }
 
+#if CYD_MCP23017_ENABLE
+namespace {
+bool mcpInitialized = false;
+
+void initMCP23017() {
+  if (mcpInitialized) return;
+  Wire.begin(CYD_MCP23017_SDA, CYD_MCP23017_SCL);
+  
+  // Set all Port A pins as inputs
+  Wire.beginTransmission(0x20);
+  Wire.write(0x00); // IODIRA
+  Wire.write(0xFF);
+  Wire.endTransmission();
+  
+  // Set all Port B pins as inputs
+  Wire.beginTransmission(0x20);
+  Wire.write(0x01); // IODIRB
+  Wire.write(0xFF);
+  Wire.endTransmission();
+  
+  // Enable pull-ups on Port A
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0C); // GPPUA
+  Wire.write(0xFF);
+  Wire.endTransmission();
+  
+  // Enable pull-ups on Port B
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0D); // GPPUB
+  Wire.write(0xFF);
+  Wire.endTransmission();
+  
+  mcpInitialized = true;
+}
+
+void cyd_poll_mcp23017_buttons() {
+  initMCP23017();
+  
+  Wire.beginTransmission(0x20);
+  Wire.write(0x12); // Start reading from GPIOA (0x12)
+  if (Wire.endTransmission() != 0) {
+    return; // I2C communication error, skip this frame
+  }
+  
+  Wire.requestFrom(0x20, 2);
+  if (Wire.available() < 2) return;
+  
+  uint8_t gpioa = Wire.read();
+  uint8_t gpiob = Wire.read();
+  
+  // Active-low buttons: invert bits so 1 = pressed, 0 = released
+  uint16_t pins = ~(gpioa | (gpiob << 8));
+  
+  // Map Port A pins
+  cyd_native_set_key(SDLK_UP,     (pins & (1 << 0)) != 0);   // PA0 -> Up
+  cyd_native_set_key(SDLK_DOWN,   (pins & (1 << 1)) != 0);   // PA1 -> Down
+  cyd_native_set_key(SDLK_LEFT,   (pins & (1 << 2)) != 0);   // PA2 -> Left
+  cyd_native_set_key(SDLK_RIGHT,  (pins & (1 << 3)) != 0);   // PA3 -> Right
+  // PA4 -> Unused
+  cyd_native_set_key(SDLK_PAUSE,  (pins & (1 << 5)) != 0);   // PA5 -> Select (Pause)
+  // PA6 (L1) -> Unused
+  // PA7 (L2) -> Unused
+  
+  // Map Port B pins
+  // PB0 (R2) -> Unused
+  // PB1 (R1) -> Unused
+  cyd_native_set_key(SDLK_RETURN, (pins & (1 << 10)) != 0);  // PB2 -> Enter (keep)
+  cyd_native_set_key(SDLK_ESCAPE, (pins & (1 << 11)) != 0);  // PB3 -> Start (Escape)
+  cyd_native_set_key(SDLK_LALT,   (pins & (1 << 12)) != 0);  // PB4 -> Upper (Strafe)
+  cyd_native_set_key(SDLK_LSHIFT, (pins & (1 << 13)) != 0);  // PB5 -> Lower (Run)
+  cyd_native_set_key(SDLK_SPACE,  (pins & (1 << 14)) != 0);  // PB6 -> Right (Open/Use)
+  cyd_native_set_key(SDLK_LCTRL,  (pins & (1 << 15)) != 0);  // PB7 -> Left (Fire)
+}
+}
+#endif
+
 extern "C" void cyd_native_poll_input(void) {
   pumpSerialControls();
   cyd_poll_touch_controls();
+#if CYD_MCP23017_ENABLE
+  cyd_poll_mcp23017_buttons();
+#endif
 }

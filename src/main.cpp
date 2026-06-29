@@ -2,6 +2,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <WiFi.h>
+#include <Wire.h>
 #include <TFT_eSPI.h>
 #include <TJpg_Decoder.h>
 #include <driver/i2s.h>
@@ -16,7 +17,7 @@ struct Button { int16_t x, y, w, h; const char *label; char key; };
 Button buttons[] = {
   {8, 54, 96, 45, "DISPLAY", 'd'}, {112, 54, 96, 45, "TOUCH", 't'}, {216, 54, 96, 45, "SD CARD", 's'},
   {8, 107, 96, 45, "AUDIO", 'a'}, {112, 107, 96, 45, "BACKLIGHT", 'b'}, {216, 107, 96, 45, "SYSTEM", 'm'},
-  {8, 160, 96, 45, "WI-FI", 'w'}, {112, 160, 96, 45, "MEDIA", 'v'}, {216, 160, 96, 45, "RUN ALL", 'r'}
+  {8, 160, 96, 45, "BUTTONS", 'w'}, {112, 160, 96, 45, "MEDIA", 'v'}, {216, 160, 96, 45, "RUN ALL", 'r'}
 };
 
 bool touchReady = false;
@@ -400,13 +401,89 @@ void systemTest() {
   line("Uptime: " + String(millis()/1000) + " sec"); waitBrief(1800);
 }
 
-void wifiTest() {
-  header("WI-FI SCAN"); line("\f"); line("Scanning...", TFT_YELLOW);
-  WiFi.mode(WIFI_STA); WiFi.disconnect(true); delay(100);
-  int n = WiFi.scanNetworks(false, true);
-  if (n < 0) line("FAIL: scan error", TFT_RED);
-  else { line(String(n) + " networks found", TFT_GREEN); for(int i=0;i<min(n,6);++i) line(String(WiFi.RSSI(i)) + " dBm  " + WiFi.SSID(i)); }
-  WiFi.scanDelete(); WiFi.mode(WIFI_OFF); waitBrief(1800);
+void mcpButtonsTest() {
+  header("MCP23017 BUTTONS");
+  line("\f");
+  line("Initializing MCP23017 on 27/22...", TFT_YELLOW);
+  
+  Wire.begin(CYD_MCP23017_SDA, CYD_MCP23017_SCL);
+  Wire.beginTransmission(0x20);
+  Wire.write(0x00); Wire.write(0xFF); // IODIRA = 0xFF
+  Wire.endTransmission();
+  Wire.beginTransmission(0x20);
+  Wire.write(0x01); Wire.write(0xFF); // IODIRB = 0xFF
+  Wire.endTransmission();
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0C); Wire.write(0xFF); // GPPUA = 0xFF
+  Wire.endTransmission();
+  Wire.beginTransmission(0x20);
+  Wire.write(0x0D); Wire.write(0xFF); // GPPUB = 0xFF
+  Wire.endTransmission();
+
+  line("Running Real-time Test...", TFT_GREEN);
+  line("Press buttons to verify. Tap screen to exit.");
+  delay(1000);
+  
+  tft.fillRect(0, 38, tft.width(), tft.height() - 38, TFT_BLACK);
+  
+  const char* labels[] = {
+    "PA0: UP", "PA1: DOWN", "PA2: LEFT", "PA3: RIGHT",
+    "PA4: UNUSED", "PA5: SELECT (Pause)", "PA6: L1 (Unused)", "PA7: L2 (Unused)",
+    "PB0: R2 (Unused)", "PB1: R1 (Unused)", "PB2: ENTER (Menu)", "PB3: START (Esc)",
+    "PB4: UPPER (Strafe)", "PB5: LOWER (Run)", "PB6: RIGHT (Use)", "PB7: LEFT (Fire)"
+  };
+  
+  uint32_t lastDraw = 0;
+  bool exitTest = false;
+  
+  while (!exitTest) {
+    int16_t tx, ty;
+    if (readTouch(tx, ty)) {
+      exitTest = true;
+      break;
+    }
+    
+    Wire.beginTransmission(0x20);
+    Wire.write(0x12); // GPIOA
+    if (Wire.endTransmission() == 0) {
+      Wire.requestFrom(0x20, 2);
+      if (Wire.available() >= 2) {
+        uint8_t gpioa = Wire.read();
+        uint8_t gpiob = Wire.read();
+        uint16_t pins = ~(gpioa | (gpiob << 8));
+        
+        if (millis() - lastDraw > 50) {
+          tft.setTextColor(TFT_WHITE, TFT_BLACK);
+          tft.drawString("MCP23017 Real-time Status", 10, 44, 2);
+          
+          for (int i = 0; i < 16; ++i) {
+            bool pressed = (pins & (1 << i)) != 0;
+            int16_t x = (i < 8) ? 10 : 160;
+            int16_t y = 65 + (i % 8) * 18;
+            
+            tft.fillRect(x, y, 140, 16, TFT_BLACK);
+            tft.setTextColor(pressed ? TFT_GREEN : TFT_DARKGREY, TFT_BLACK);
+            tft.drawString(labels[i], x, y, 2);
+            if (pressed) {
+              tft.drawString(" [ON]", x + 105, y, 2);
+            }
+          }
+          lastDraw = millis();
+        }
+      }
+    } else {
+      if (millis() - lastDraw > 250) {
+        tft.fillRect(10, 44, 300, 20, TFT_BLACK);
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+        tft.drawString("MCP23017 Error (No I2C ack)", 10, 44, 2);
+        lastDraw = millis();
+      }
+    }
+    delay(10);
+  }
+  
+  endSDBusAndRestoreTouch();
+  waitBrief(500);
 }
 
 void runTest(char key) {
@@ -414,8 +491,8 @@ void runTest(char key) {
   switch(key) {
     case 'd': displayTest(); break; case 't': touchTest(); break; case 's': sdTest(); break;
     case 'a': audioTest(); break; case 'b': backlightTest(); break; case 'm': systemTest(); break;
-    case 'w': wifiTest(); break; case 'v': mediaTest(); break;
-    case 'r': displayTest(); touchTest(); sdTest(); audioTest(); backlightTest(); systemTest(); wifiTest(); mediaTest(); break;
+    case 'w': mcpButtonsTest(); break; case 'v': mediaTest(); break;
+    case 'r': displayTest(); touchTest(); sdTest(); audioTest(); backlightTest(); systemTest(); mcpButtonsTest(); mediaTest(); break;
     default: return;
   }
   showMenu();

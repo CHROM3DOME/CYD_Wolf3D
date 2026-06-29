@@ -378,7 +378,7 @@ int postwidth;
 int postwallpic;
 
 namespace {
-constexpr int CYD_WALL_CACHE_DIM = 8;
+constexpr int CYD_WALL_CACHE_DIM = 16;
 constexpr int CYD_WALL_CACHE_TARGET_SLOTS = 24;
 constexpr int CYD_WALL_CACHE_MIN_SLOTS = 8;
 constexpr uint32_t CYD_WALL_CACHE_HEAP_RESERVE = 8000;
@@ -396,6 +396,16 @@ uint32_t cydWallTexHits = 0;
 uint32_t cydWallTexBuilds = 0;
 uint32_t cydWallTexBuildUs = 0;
 #endif
+}
+
+extern "C" void CydFreeWallCache(void)
+{
+    if (cydWallCache)
+    {
+        free(cydWallCache);
+        cydWallCache = nullptr;
+        cydWallCacheSlots = 0;
+    }
 }
 
 static bool CydEnsureWallCache()
@@ -532,7 +542,7 @@ static byte CydWallTexel(CydWallCacheSlot *slot, int texture, int yw, byte fallb
     if(cy < 0) cy = 0;
     if(cy >= CYD_WALL_CACHE_DIM) cy = CYD_WALL_CACHE_DIM - 1;
     byte col = slot->tex[cy * CYD_WALL_CACHE_DIM + cx];
-    return col ? col : fallback;
+    return col;
 }
 
 static void CydWallTextureFlushPerf()

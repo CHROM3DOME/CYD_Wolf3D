@@ -4,6 +4,7 @@
 
 #ifdef WOLF3D_CYD_PORT
 extern "C" void cyd_wolf_flash_event(int kind, int level, int durationMs);
+extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int height);
 #endif
 
 /*
@@ -272,8 +273,20 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 
 void StatusDrawFace(unsigned picnum)
 {
+#ifdef WOLF3D_CYD_PORT
+    if (picnum >= LATCHPICS_LUMP_START && picnum <= LATCHPICS_LUMP_END) {
+        int idx = 2 + picnum - LATCHPICS_LUMP_START;
+        if (idx >= 0 && idx < NUMLATCHPICS) {
+            SDL_Surface *surf = latchpics[idx];
+            if (surf && surf->pixels) {
+                cyd_send_face_sprite((const uint8_t *)surf->pixels, surf->w, surf->h);
+            }
+        }
+    }
+#endif
     StatusDrawPic(17, 4, picnum);
 }
+
 
 
 /*

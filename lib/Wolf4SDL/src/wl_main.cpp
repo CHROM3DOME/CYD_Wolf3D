@@ -1,4 +1,4 @@
-// WL_MAIN.C
+﻿// WL_MAIN.C
 
 #ifdef _WIN32
     #include <io.h>
@@ -1249,6 +1249,10 @@ void DoJukebox(void)
 ==========================
 */
 
+extern "C" uint32_t esp_get_free_heap_size(void);
+extern "C" uint32_t heap_caps_get_largest_free_block(uint32_t caps);
+extern "C" void furi_log_print_format(int, const char*, const char*, ...);
+
 static void InitGame()
 {
 #ifndef SPEARDEMO
@@ -1367,7 +1371,16 @@ static void InitGame()
 // load in and lock down some basic chunks
 //
 
+    furi_log_print_format(2, "Wolf3D", "Before font cache: Free Heap = %u, Largest block = %u",
+                          (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
+
     CA_CacheGrChunk(STARTFONT);
+#ifdef WOLF3D_CYD_PORT
+    CA_CacheGrChunk(STARTFONT + 1);
+#endif
+
+    furi_log_print_format(2, "Wolf3D", "After font cache: Free Heap = %u, Largest block = %u",
+                          (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
 #ifndef WOLF3D_CYD_PORT
     CA_CacheGrChunk(STATUSBARPIC);
 #endif
@@ -1395,7 +1408,7 @@ static void InitGame()
 #endif
 
 #ifdef WOLF3D_CYD_PORT
-    UNCACHEGRCHUNK(STARTFONT);
+    // UNCACHEGRCHUNK(STARTFONT);
 #endif
 
 #ifdef NOTYET

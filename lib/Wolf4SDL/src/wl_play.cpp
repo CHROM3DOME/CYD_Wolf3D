@@ -1,4 +1,4 @@
-// WL_PLAY.C
+ï»¿// WL_PLAY.C
 
 #include "wl_def.h"
 
@@ -51,7 +51,7 @@ unsigned tics;
 //
 boolean mouseenabled, joystickenabled;
 int dirscan[4] = { sc_UpArrow, sc_RightArrow, sc_DownArrow, sc_LeftArrow };
-int buttonscan[NUMBUTTONS] = { sc_Control, sc_Alt, sc_LShift, sc_Space, sc_1, sc_2, sc_3, sc_4 };
+int buttonscan[NUMBUTTONS] = { sc_Control, sc_Alt, sc_LShift, sc_Space, sc_1, sc_2, sc_3, sc_4, SDLK_m };
 int buttonmouse[4] = { bt_attack, bt_strafe, bt_use, bt_nobutton };
 int buttonjoy[32] = {
     bt_attack, bt_strafe, bt_use, bt_run, bt_strafeleft, bt_straferight, bt_esc, bt_pause,
@@ -205,7 +205,7 @@ const int songs[] = {
     XFUNKIE_MUS,
     XDEATH_MUS,
     XGETYOU_MUS,                // DON'T KNOW
-    ULTIMATE_MUS,               // Trans Gr”sse
+    ULTIMATE_MUS,               // Trans Grï¿½sse
 
     DUNGEON_MUS,
     GOINGAFT_MUS,
@@ -538,6 +538,11 @@ void CenterWindow (word w, word h)
 //===========================================================================
 
 
+extern "C" uint32_t esp_get_free_heap_size(void);
+extern "C" uint32_t heap_caps_get_largest_free_block(uint32_t caps);
+extern "C" void furi_log_print_format(int, const char*, const char*, ...);
+extern "C" void CydFreeWallCache(void);
+
 /*
 =====================
 =
@@ -673,6 +678,32 @@ void CheckKeys (void)
         lasttimecount = GetTimeCount();
         return;
     }
+
+#ifdef WOLF3D_CYD_PORT
+    if (scan == sc_Escape || buttonstate[bt_esc])
+    {
+        furi_log_print_format(2, "Wolf3D", "Menu open: Free Heap before purge = %u, Largest block = %u",
+                              (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
+
+        ClearMemory ();
+        CA_ClearSoundCache ();
+        CydFreeWallCache ();
+        PM_ClearCache ();
+
+        furi_log_print_format(2, "Wolf3D", "Menu open: Free Heap after purge = %u, Largest block = %u",
+                              (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
+
+        US_ControlPanel (sc_Escape);
+        SETFONTCOLOR (0, 15);
+        IN_ClearKeysDown ();
+        if(viewsize != 21)
+            DrawPlayScreen ();
+        if (loadedgame)
+            playstate = ex_abort;
+        lasttimecount = GetTimeCount();
+        return;
+    }
+#endif
 
 #ifndef WOLF3D_CYD_PORT
 //

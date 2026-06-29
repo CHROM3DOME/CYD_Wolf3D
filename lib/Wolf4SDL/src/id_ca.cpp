@@ -965,8 +965,15 @@ void CAL_ExpandGrChunk (int chunk, int32_t *source)
 #ifdef WOLF3D_CYD_PORT
     cyd_trace_gr_expand(chunk, expanded);
 #endif
-    grsegs[chunk]=(byte *) malloc(expanded);
-    CHECKMALLOCRESULT(grsegs[chunk]);
+    if (chunk == STARTFONT + 1 && expanded <= 12314) {
+        static byte cydFontMetricsBuffer[12314];
+        grsegs[chunk] = cydFontMetricsBuffer;
+    } else {
+        grsegs[chunk] = (byte *) malloc(expanded);
+    }
+    if (!grsegs[chunk]) {
+        Quit("OOM allocating chunk %i of size %i", chunk, (int)expanded);
+    }
     CAL_HuffExpand((byte *) source, grsegs[chunk], expanded, grhuffman);
 }
 
@@ -1217,4 +1224,16 @@ void CA_CannotOpen(const char *string)
     strcat(str,string);
     strcat(str,"!\n");
     Quit (str);
+}
+
+void CA_ClearSoundCache(void)
+{
+    for(int i = 0; i < NUMSNDCHUNKS; ++i)
+    {
+        if(audiosegs[i])
+        {
+            free(audiosegs[i]);
+            audiosegs[i] = NULL;
+        }
+    }
 }

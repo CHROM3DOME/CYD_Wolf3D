@@ -61,6 +61,7 @@ void ensurePcmTimer() {
 
 extern "C" void cyd_hw_tone_init(void) {
   if (ready) return;
+  dac_output_disable(DAC_CHANNEL_2);
   ledcSetup(kToneChannel, 2000, kToneResolutionBits);
   ledcAttachPin(AUDIO_DAC_PIN, kToneChannel);
   ledcWriteTone(kToneChannel, 0);
@@ -82,6 +83,8 @@ extern "C" void cyd_hw_tone(uint16_t frequency) {
     ledcWrite(kToneChannel, 0);
     return;
   }
+  dac_output_disable(DAC_CHANNEL_2);
+  ledcAttachPin(AUDIO_DAC_PIN, kToneChannel);
   ledcWriteTone(kToneChannel, frequency);
   uint32_t duty = ((uint32_t)CYD_WOLF_SOUND_DUTY * audioVolume) / 192;
   if (duty > CYD_WOLF_SOUND_DUTY) duty = CYD_WOLF_SOUND_DUTY;
@@ -95,9 +98,11 @@ extern "C" uint32_t cyd_hw_millis(void) {
 
 extern "C" void cyd_hw_pcm_play(const uint8_t *data, uint32_t length) {
   if (!data || !length) return;
-  ensurePcmTimer();
   ledcWriteTone(kToneChannel, 0);
   ledcWrite(kToneChannel, 0);
+  ledcDetachPin(AUDIO_DAC_PIN);
+  dac_output_enable(DAC_CHANNEL_2);
+  ensurePcmTimer();
   portENTER_CRITICAL(&pcmMux);
   pcmData = data;
   pcmLength = length;
@@ -118,9 +123,11 @@ extern "C" void cyd_hw_pcm_play(const uint8_t *data, uint32_t length) {
 extern "C" void cyd_hw_pcm_play_segments(const uint8_t **segments, const uint32_t *lengths, uint8_t count) {
   if (!segments || !lengths || !count) return;
   if (count > kPcmMaxSegments) count = kPcmMaxSegments;
-  ensurePcmTimer();
   ledcWriteTone(kToneChannel, 0);
   ledcWrite(kToneChannel, 0);
+  ledcDetachPin(AUDIO_DAC_PIN);
+  dac_output_enable(DAC_CHANNEL_2);
+  ensurePcmTimer();
   portENTER_CRITICAL(&pcmMux);
   for (uint8_t i = 0; i < count; ++i) {
     pcmSegments[i] = segments[i];

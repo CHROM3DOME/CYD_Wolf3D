@@ -111,6 +111,7 @@ int PM_ChooseHotPageSlot()
 void PM_ClearHotPages() {}
 uint8_t *PM_FindHotPage(int) { return nullptr; }
 #endif
+}
 
 void PM_ClearCache()
 {
@@ -226,7 +227,6 @@ uint8_t *PM_LoadHotPage(int page, uint32_t size)
 #else
 uint8_t *PM_LoadHotPage(int, uint32_t) { return nullptr; }
 #endif
-}
 #endif
 
 void PM_Startup()

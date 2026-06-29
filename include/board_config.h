@@ -28,7 +28,7 @@
 // Wolf3D display profile.
 #define CYD_WOLF_VIEW_SIZE 20
 
-#define CYD_WOLF_BUILD_NUMBER 20
+#define CYD_WOLF_BUILD_NUMBER 24
 
 #define CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT 160
 
@@ -69,11 +69,21 @@
 #define CYD_WOLF_HOT_PAGE_CACHE_SLOTS 6
 #define CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES 1536
 
-#define CYD_WOLF_SCREEN_FLASHES 0
+#define CYD_WOLF_SCREEN_FLASHES 1
+
+// S2 Face Serial connection (TX=1 on programming port P1, RX=3)
+#define CYD_S2_FACE_TX_PIN 1
+#define CYD_S2_FACE_RX_PIN 3
+
+// MCP23017 port expander configuration
+#define CYD_MCP23017_ENABLE 1
+#define CYD_MCP23017_SDA 27
+#define CYD_MCP23017_SCL 22
+
 
 // CYD memory profile.
-#define CYD_WOLF_MAXACTORS 128
-#define CYD_WOLF_MAXSTATS 400
+#define CYD_WOLF_MAXACTORS 64
+#define CYD_WOLF_MAXSTATS 160
 #define CYD_WOLF_MAXVISABLE 128
 
 // Audio.

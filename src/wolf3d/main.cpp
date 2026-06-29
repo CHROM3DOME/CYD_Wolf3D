@@ -2,6 +2,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <TFT_eSPI.h>
+#include "esp_wifi.h"
+#include "esp_bt.h"
 
 #include "board_config.h"
 
@@ -33,8 +35,65 @@ void fatalScreen(const String &message) {
   wolfTft.fillScreen(TFT_BLACK);
   wolfTft.setTextColor(TFT_RED, TFT_BLACK);
   wolfTft.drawString("WOLF3D PORT", 12, 12, 4);
+  
   wolfTft.setTextColor(TFT_WHITE, TFT_BLACK);
-  wolfTft.drawString(message, 12, 58, 2);
+  
+  int16_t startX = 12;
+  int16_t startY = 58;
+  int16_t currentX = startX;
+  int16_t currentY = startY;
+  int16_t maxX = wolfTft.width() - 12;
+  int16_t lineHeight = 18;
+  uint8_t font = 2;
+  
+  String currentLine = "";
+  int index = 0;
+  
+  while (index < message.length()) {
+    int nextSpace = message.indexOf(' ', index);
+    int nextNewline = message.indexOf('\n', index);
+    
+    int nextCut = -1;
+    bool isNewline = false;
+    if (nextSpace == -1 && nextNewline == -1) {
+      nextCut = message.length();
+    } else if (nextSpace == -1) {
+      nextCut = nextNewline;
+      isNewline = true;
+    } else if (nextNewline == -1) {
+      nextCut = nextSpace;
+    } else {
+      if (nextSpace < nextNewline) {
+        nextCut = nextSpace;
+      } else {
+        nextCut = nextNewline;
+        isNewline = true;
+      }
+    }
+    
+    String word = message.substring(index, nextCut);
+    String testLine = currentLine.length() > 0 ? (currentLine + " " + word) : word;
+    
+    if (currentLine.length() > 0 && currentX + wolfTft.textWidth(testLine, font) > maxX) {
+      wolfTft.drawString(currentLine, currentX, currentY, font);
+      currentY += lineHeight;
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+    
+    if (isNewline) {
+      wolfTft.drawString(currentLine, currentX, currentY, font);
+      currentY += lineHeight;
+      currentLine = "";
+    }
+    
+    index = nextCut + 1;
+  }
+  
+  if (currentLine.length() > 0) {
+    wolfTft.drawString(currentLine, currentX, currentY, font);
+  }
 }
 
 void statusScreen(const String &message) {
@@ -106,6 +165,25 @@ extern "C" void cyd_set_palette(const uint8_t *rgb, int first, int count) {
   }
 }
 
+extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int height) {
+  if (!pixels || width <= 0 || height <= 0) return;
+  
+  // Write packet header: Sync (0xAA, 0x55), width, height
+  Serial.write(0xAA);
+  Serial.write(0x55);
+  Serial.write((uint8_t)width);
+  Serial.write((uint8_t)height);
+  
+  // Stream pixels as 16-bit RGB565 big-endian bytes
+  int total = width * height;
+  for (int i = 0; i < total; ++i) {
+    uint16_t color = palette565[pixels[i]];
+    Serial.write((uint8_t)(color >> 8));
+    Serial.write((uint8_t)(color & 0xFF));
+  }
+}
+
+
 void presentIndexedRect(const uint8_t *pixels, int width, int height, int pitch,
                         int sourceX, int sourceY, int rectWidth, int rectHeight) {
   if (!pixels || width <= 0 || height <= 0 || rectWidth <= 0 || rectHeight <= 0) return;
@@ -161,12 +239,34 @@ extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height
 }
 
 void setup() {
-  Serial.begin(115200);
+  // Release Bluetooth controller memory to reclaim SRAM
+  esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+  
+  // Power down WiFi radio
+  esp_wifi_stop();
+  esp_wifi_deinit();
+
+  Serial.setTxBufferSize(2048);
+  Serial.begin(460800);
+
   pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
   digitalWrite(TFT_BACKLIGHT_PIN, HIGH);
   wolfTft.init();
   wolfTft.setRotation(DISPLAY_ROTATION);
   wolfTft.setSwapBytes(true);
+
+  // Send connection test pattern (16x16 red square) to S2 Mini using native color565
+  palette565[14] = wolfTft.color565(255, 0, 0); // Red
+  uint8_t testPixels[16 * 16];
+  memset(testPixels, 14, sizeof(testPixels));
+  cyd_send_face_sprite(testPixels, 16, 16);
+
+  // Display visual build confirmation on CYD boot screen
+  wolfTft.fillScreen(TFT_BLACK);
+  wolfTft.setTextColor(TFT_CYAN, TFT_BLACK);
+  char buildStr[32];
+  snprintf(buildStr, sizeof(buildStr), "Build: B%d", CYD_WOLF_BUILD_NUMBER);
+  wolfTft.drawString(buildStr, 12, 12, 4);
   fatalScreen("Mounting SD card...");
 
   wolfSdSpi.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);

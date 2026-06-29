@@ -10,7 +10,16 @@
     #define MAPPLANES       2
 #endif
 
+#ifdef WOLF3D_CYD_PORT
+#define UNCACHEGRCHUNK(chunk) { \
+    if(grsegs[chunk] && (chunk) != STARTFONT && (chunk) != (STARTFONT+1)) { \
+        free(grsegs[chunk]); \
+        grsegs[chunk]=NULL; \
+    } \
+}
+#else
 #define UNCACHEGRCHUNK(chunk) {if(grsegs[chunk]) {free(grsegs[chunk]); grsegs[chunk]=NULL;}}
+#endif
 #define UNCACHEAUDIOCHUNK(chunk) {if(audiosegs[chunk]) {free(audiosegs[chunk]); audiosegs[chunk]=NULL;}}
 
 //===========================================================================
@@ -56,5 +65,6 @@ void CA_CacheMap (int mapnum);
 void CA_CacheScreen (int chunk);
 
 void CA_CannotOpen(const char *name);
+void CA_ClearSoundCache(void);
 
 #endif

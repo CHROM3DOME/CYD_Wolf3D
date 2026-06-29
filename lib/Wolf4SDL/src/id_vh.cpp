@@ -249,8 +249,11 @@ void FreeLatchMem()
     int i;
     for(i = 0; i < 2 + LATCHPICS_LUMP_END - LATCHPICS_LUMP_START; i++)
     {
-        SDL_FreeSurface(latchpics[i]);
-        latchpics[i] = NULL;
+        if (latchpics[i])
+        {
+            SDL_FreeSurface(latchpics[i]);
+            latchpics[i] = NULL;
+        }
     }
 }
 
@@ -264,9 +267,6 @@ void FreeLatchMem()
 
 void LoadLatchMem (void)
 {
-#ifdef WOLF3D_CYD_PORT
-    return;
-#else
 	int	i,width,height,start,end;
 	byte *src;
 	SDL_Surface *surf;
@@ -274,6 +274,7 @@ void LoadLatchMem (void)
 //
 // tile 8s
 //
+#ifndef WOLF3D_CYD_PORT
     surf = SDL_CreateRGBSurface(0, 8*8,
         ((NUMTILE8 + 7) / 8) * 8, 8, 0, 0, 0, 0);
     if(surf == NULL)
@@ -295,6 +296,9 @@ void LoadLatchMem (void)
 		src += 64;
 	}
 	UNCACHEGRCHUNK (STARTTILE8);
+#else
+    latchpics[0] = NULL;
+#endif
 
 	latchpics[1] = NULL;  // not used
 
@@ -306,6 +310,14 @@ void LoadLatchMem (void)
 
 	for (i=start;i<=end;i++)
 	{
+#ifdef WOLF3D_CYD_PORT
+        // Under WOLF3D_CYD_PORT, we only need face graphics (FACE1APIC to MUTANTBJPIC)
+        if (i < FACE1APIC || i > MUTANTBJPIC)
+        {
+            latchpics[2+i-start] = NULL;
+            continue;
+        }
+#endif
 		width = pictable[i-STARTPICS].width;
 		height = pictable[i-STARTPICS].height;
 		surf = SDL_CreateRGBSurface(0, width, height, 8, 0, 0, 0, 0);
@@ -323,7 +335,6 @@ void LoadLatchMem (void)
 		VL_MemToLatch (grsegs[i], width, height, surf, 0, 0);
 		UNCACHEGRCHUNK(i);
 	}
-#endif
 }
 
 //==========================================================================
