@@ -74,6 +74,26 @@ bool pathExistsByListing(const String &path) {
   return false;
 }
 
+File openExistingReadFile(const char *path) {
+  String original = gamePath(path);
+  File file = SD.open(original, FILE_READ);
+  if (file) return file;
+
+  String upperName = upperFilenamePath(original);
+  if (upperName != original) {
+    file = SD.open(upperName, FILE_READ);
+    if (file) return file;
+  }
+
+  String allUpper = upperPath(original);
+  if (allUpper != original && allUpper != upperName) {
+    file = SD.open(allUpper, FILE_READ);
+    if (file) return file;
+  }
+
+  return File();
+}
+
 String resolveExistingPath(const char *path) {
   String original = gamePath(path);
   if (pathExistsByListing(original)) return original;
@@ -94,10 +114,8 @@ int allocate(File file) {
 }
 
 extern "C" int wolf_open(const char *path, int flags, ...) {
-  const char *mode = (flags & (O_WRONLY | O_RDWR | O_CREAT)) ? FILE_WRITE : FILE_READ;
-  String resolved = mode == FILE_READ ? resolveExistingPath(path) : gamePath(path);
-  if (mode == FILE_READ && !pathExistsByListing(resolved)) return -1;
-  File file = SD.open(resolved, mode);
+  const bool writing = flags & (O_WRONLY | O_RDWR | O_CREAT);
+  File file = writing ? SD.open(gamePath(path), FILE_WRITE) : openExistingReadFile(path);
   return file ? allocate(file) : -1;
 }
 extern "C" int wolf_close(int fd) { if (fd <= 0 || fd >= maxFiles || !descriptors[fd]) return -1; descriptors[fd].close(); return 0; }
@@ -122,9 +140,7 @@ struct WolfFile { File file; bool eof; };
 extern "C" WolfFile *wolf_fopen(const char *path, const char *mode) {
   WolfFile *result = new WolfFile;
   const bool writing = strchr(mode, 'w') || strchr(mode, 'a');
-  String resolved = writing ? gamePath(path) : resolveExistingPath(path);
-  if (!writing && !pathExistsByListing(resolved)) { delete result; return nullptr; }
-  result->file = SD.open(resolved, writing ? FILE_WRITE : FILE_READ);
+  result->file = writing ? SD.open(gamePath(path), FILE_WRITE) : openExistingReadFile(path);
   result->eof = false;
   if (!result->file) { delete result; return nullptr; }
   return result;

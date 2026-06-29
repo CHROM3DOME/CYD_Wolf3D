@@ -1,5 +1,13 @@
 #include "wl_def.h"
 
+#ifdef WOLF3D_CYD_PORT
+#ifndef CYD_S2_FACE_ENABLE
+#define CYD_S2_FACE_ENABLE 1
+#endif
+#ifndef CYD_S2_FACE_LATCH_SURFACES
+#define CYD_S2_FACE_LATCH_SURFACES 0
+#endif
+#endif
 
 pictabletype	*pictable;
 SDL_Surface     *latchpics[NUMLATCHPICS];
@@ -23,6 +31,15 @@ void VWB_DrawPropString(const char* string)
 	if(vbuf == NULL) return;
 
 	void *p = grsegs[STARTFONT+fontnumber];
+#ifdef WOLF3D_CYD_PORT
+    if(!p)
+        p = grsegs[STARTFONT];
+    if(!p)
+    {
+        VL_UnlockSurface(curSurface);
+        return;
+    }
+#endif
 	font = (fontstruct *) p;
 	height = font->height;
 	dest = vbuf + scaleFactor * (py * curPitch + px);
@@ -107,6 +124,15 @@ void VWL_MeasureString (const char *string, word *width, word *height, fontstruc
 void VW_MeasurePropString (const char *string, word *width, word *height)
 {
 	void *p = grsegs[STARTFONT+fontnumber];
+#ifdef WOLF3D_CYD_PORT
+    if(!p)
+        p = grsegs[STARTFONT];
+    if(!p)
+    {
+        *width = *height = 0;
+        return;
+    }
+#endif
 	VWL_MeasureString(string,width,height,(fontstruct *)p);
 }
 
@@ -139,24 +165,56 @@ void VWB_DrawPic (int x, int y, int chunknum)
 {
 	int	picnum = chunknum - STARTPICS;
 	unsigned width,height;
+#ifdef WOLF3D_CYD_PORT
+    bool cachedHere = false;
+#endif
 
 	x &= ~7;
 
 	width = pictable[picnum].width;
 	height = pictable[picnum].height;
 
+#ifdef WOLF3D_CYD_PORT
+    if (!grsegs[chunknum])
+    {
+        CA_CacheGrChunk(chunknum);
+        cachedHere = true;
+    }
+    if (!grsegs[chunknum])
+        return;
+#endif
 	VL_MemToScreen (grsegs[chunknum],width,height,x,y);
+#ifdef WOLF3D_CYD_PORT
+    if (cachedHere)
+        UNCACHEGRCHUNK(chunknum);
+#endif
 }
 
 void VWB_DrawPicScaledCoord (int scx, int scy, int chunknum)
 {
 	int	picnum = chunknum - STARTPICS;
 	unsigned width,height;
+#ifdef WOLF3D_CYD_PORT
+    bool cachedHere = false;
+#endif
 
 	width = pictable[picnum].width;
 	height = pictable[picnum].height;
 
+#ifdef WOLF3D_CYD_PORT
+    if (!grsegs[chunknum])
+    {
+        CA_CacheGrChunk(chunknum);
+        cachedHere = true;
+    }
+    if (!grsegs[chunknum])
+        return;
+#endif
     VL_MemToScreenScaledCoord (grsegs[chunknum],width,height,scx,scy);
+#ifdef WOLF3D_CYD_PORT
+    if (cachedHere)
+        UNCACHEGRCHUNK(chunknum);
+#endif
 }
 
 
@@ -311,12 +369,17 @@ void LoadLatchMem (void)
 	for (i=start;i<=end;i++)
 	{
 #ifdef WOLF3D_CYD_PORT
+#if CYD_S2_FACE_ENABLE && CYD_S2_FACE_LATCH_SURFACES
         // Under WOLF3D_CYD_PORT, we only need face graphics (FACE1APIC to MUTANTBJPIC)
         if (i < FACE1APIC || i > MUTANTBJPIC)
         {
             latchpics[2+i-start] = NULL;
             continue;
         }
+#else
+        latchpics[2+i-start] = NULL;
+        continue;
+#endif
 #endif
 		width = pictable[i-STARTPICS].width;
 		height = pictable[i-STARTPICS].height;

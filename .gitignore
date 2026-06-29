@@ -3,6 +3,7 @@
 .platformio-core/
 .platformio-python/
 platformio_cli/
+.codex-pio-venv/
 
 # Local wheel/runtime workarounds
 vendor/

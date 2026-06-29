@@ -35,8 +35,24 @@ extern "C" void cyd_trace_sprite(int shapenum, int category, unsigned height);
 #ifndef CYD_WOLF_FLAT_WALLS
 #define CYD_WOLF_FLAT_WALLS 1
 #endif
+#ifndef CYD_WOLF_LOW_RES_WALL_TEXTURES
+#define CYD_WOLF_LOW_RES_WALL_TEXTURES 0
+#endif
 #ifndef CYD_WOLF_WALL_TEXTURE_CACHE
 #define CYD_WOLF_WALL_TEXTURE_CACHE 1
+#endif
+#ifndef CYD_WOLF_WALL_TEXTURE_CACHE_SLOTS
+#define CYD_WOLF_WALL_TEXTURE_CACHE_SLOTS 8
+#endif
+#ifndef CYD_WOLF_WALL_TEXTURE_DIM
+#define CYD_WOLF_WALL_TEXTURE_DIM 16
+#endif
+#ifndef CYD_WOLF_WALL_COLUMN_STEP
+#define CYD_WOLF_WALL_COLUMN_STEP 1
+#endif
+#if CYD_WOLF_WALL_COLUMN_STEP < 1
+#undef CYD_WOLF_WALL_COLUMN_STEP
+#define CYD_WOLF_WALL_COLUMN_STEP 1
 #endif
 #ifndef CYD_WOLF_WALL_TEXTURE_MIN_PIC
 #define CYD_WOLF_WALL_TEXTURE_MIN_PIC 0
@@ -52,6 +68,18 @@ extern "C" void cyd_trace_sprite(int shapenum, int category, unsigned height);
 #endif
 #ifndef CYD_WOLF_FAST_WEAPON_SPRITES
 #define CYD_WOLF_FAST_WEAPON_SPRITES 1
+#endif
+#ifndef CYD_WOLF_DOWNSAMPLED_WEAPON
+#define CYD_WOLF_DOWNSAMPLED_WEAPON 0
+#endif
+#ifndef CYD_WOLF_WEAPON_CACHE_DIM
+#define CYD_WOLF_WEAPON_CACHE_DIM 32
+#endif
+#ifndef CYD_WOLF_WEAPON_CACHE_SLOTS
+#define CYD_WOLF_WEAPON_CACHE_SLOTS 2
+#endif
+#ifndef CYD_WOLF_ACTOR_IMPOSTORS
+#define CYD_WOLF_ACTOR_IMPOSTORS 0
 #endif
 #ifndef CYD_WOLF_HIDE_TINY_DECOR_SPRITES
 #define CYD_WOLF_HIDE_TINY_DECOR_SPRITES 1
@@ -378,10 +406,10 @@ int postwidth;
 int postwallpic;
 
 namespace {
-constexpr int CYD_WALL_CACHE_DIM = 16;
-constexpr int CYD_WALL_CACHE_TARGET_SLOTS = 24;
-constexpr int CYD_WALL_CACHE_MIN_SLOTS = 8;
-constexpr uint32_t CYD_WALL_CACHE_HEAP_RESERVE = 8000;
+constexpr int CYD_WALL_CACHE_DIM = CYD_WOLF_WALL_TEXTURE_DIM;
+constexpr int CYD_WALL_CACHE_TARGET_SLOTS = CYD_WOLF_WALL_TEXTURE_CACHE_SLOTS;
+constexpr int CYD_WALL_CACHE_MIN_SLOTS = 4;
+constexpr uint32_t CYD_WALL_CACHE_HEAP_RESERVE = 1024;
 struct CydWallCacheSlot {
     int wallpic = -1;
     uint32_t lastUse = 0;
@@ -390,6 +418,7 @@ struct CydWallCacheSlot {
 CydWallCacheSlot *cydWallCache = nullptr;
 int cydWallCacheSlots = 0;
 uint32_t cydWallCacheClock = 0;
+bool cydWallCacheSkipped = false;
 #if CYD_WOLF_ENABLE_PERF_LOGS
 uint32_t cydWallTexLookups = 0;
 uint32_t cydWallTexHits = 0;
@@ -406,12 +435,15 @@ extern "C" void CydFreeWallCache(void)
         cydWallCache = nullptr;
         cydWallCacheSlots = 0;
     }
+    cydWallCacheSkipped = false;
 }
 
 static bool CydEnsureWallCache()
 {
     if(cydWallCache)
         return true;
+    if(cydWallCacheSkipped)
+        return false;
 
     for(int slots = CYD_WALL_CACHE_TARGET_SLOTS; slots >= CYD_WALL_CACHE_MIN_SLOTS; slots -= 4)
     {
@@ -442,6 +474,7 @@ static bool CydEnsureWallCache()
         return true;
     }
 
+    cydWallCacheSkipped = true;
     furi_log_print_format(2, "Wolf3D", "Wall texture cache allocation skipped heap %u largest %u",
                           (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
                           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -450,7 +483,9 @@ static bool CydEnsureWallCache()
 
 extern "C" void cyd_wall_cache_preload(void)
 {
+#if CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES
     CydEnsureWallCache();
+#endif
 }
 
 static byte CydWallFallbackColor(int wallpic)
@@ -562,6 +597,13 @@ void ScalePost()
 {
     int ywcount, yoffs, yw, yd, yendoffs;
     byte col;
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_WALL_COLUMN_STEP > 1
+    const bool cydMirrorColumn = (postx + 1) < viewwidth;
+    if(cydMirrorColumn)
+        wallheight[postx + 1] = wallheight[postx];
+#else
+    const bool cydMirrorColumn = false;
+#endif
 
 #ifdef USE_SHADING
     byte *curshades = shadetable[GetShade(wallheight[postx])];
@@ -596,7 +638,7 @@ void ScalePost()
 #endif
     yendoffs = yendoffs * vbufPitch + postx;
 
-#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+#if defined(WOLF3D_CYD_PORT) && (CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES)
     {
         byte basecol;
         if(lastside == 2)
@@ -622,6 +664,8 @@ void ScalePost()
 #endif
 #endif
             vbuf[yendoffs] = col;
+            if(cydMirrorColumn)
+                vbuf[yendoffs + 1] = col;
             ywcount -= TEXTURESIZE/2;
             if(ywcount <= 0)
             {
@@ -642,6 +686,8 @@ void ScalePost()
     while(yoffs <= yendoffs)
     {
         vbuf[yendoffs] = col;
+        if(cydMirrorColumn)
+            vbuf[yendoffs + 1] = col;
         ywcount -= TEXTURESIZE/2;
         if(ywcount <= 0)
         {
@@ -832,6 +878,215 @@ static void CydScaleDecorImpostor(int xcenter, int shapenum, unsigned height)
         }
     }
 }
+
+#if CYD_WOLF_ACTOR_IMPOSTORS
+static void CydScaleActorImpostor(int xcenter, int shapenum, unsigned height)
+{
+    unsigned scale = height >> 3;
+    if(!scale) return;
+
+    int halfWidth = (int)scale;
+    if(halfWidth < 3) halfWidth = 3;
+    if(halfWidth > 24) halfWidth = 24;
+
+    int top = viewheight / 2 - (int)scale;
+    int bottom = viewheight / 2 + (int)scale - 1;
+    if(bottom < 0 || top >= viewheight) return;
+    if(top < 0) top = 0;
+    if(bottom >= viewheight) bottom = viewheight - 1;
+
+    int left = xcenter - halfWidth;
+    int right = xcenter + halfWidth;
+    if(right < 0 || left >= viewwidth) return;
+    if(left < 0) left = 0;
+    if(right >= viewwidth) right = viewwidth - 1;
+
+    const int spriteHeight = bottom - top + 1;
+    if(spriteHeight <= 0) return;
+
+    byte body = (shapenum & 1) ? 0x6d : 0x5d;
+    byte dark = (byte)(body - 1);
+    byte face = 0x2f;
+    byte weapon = 0x0f;
+
+    int occlusionMargin = (int)height >> 5;
+    if(occlusionMargin < 4) occlusionMargin = 4;
+
+    for(int x = left; x <= right; x += 2)
+    {
+        if((int)height <= wallheight[x] + occlusionMargin)
+            continue;
+
+        const int relx = x - xcenter;
+        const int absx = relx < 0 ? -relx : relx;
+        const int columnLimit = halfWidth - (absx >> 2);
+        if(absx > columnLimit)
+            continue;
+
+        byte *dst = vbuf + top * vbufPitch + x;
+        for(int y = top; y <= bottom; ++y)
+        {
+            int rely = y - top;
+            byte col;
+            if(rely < spriteHeight / 4)
+            {
+                if(absx > halfWidth / 2)
+                {
+                    dst += vbufPitch;
+                    continue;
+                }
+                col = face;
+            }
+            else if(rely < (spriteHeight * 3) / 4)
+            {
+                col = (absx > (halfWidth * 2) / 3) ? dark : body;
+            }
+            else
+            {
+                if(((x + shapenum) & 3) == 0)
+                {
+                    dst += vbufPitch;
+                    continue;
+                }
+                col = dark;
+            }
+
+            if(rely > spriteHeight / 3 && rely < spriteHeight / 2 &&
+               relx > 0 && relx < halfWidth)
+                col = weapon;
+
+            *dst = col;
+            if(x + 1 <= right && (int)height > wallheight[x + 1] + occlusionMargin)
+                *(dst + 1) = col;
+            dst += vbufPitch;
+        }
+    }
+}
+#endif
+#endif
+
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_DOWNSAMPLED_WEAPON
+namespace {
+constexpr int CYD_WEAPON_CACHE_DIM = CYD_WOLF_WEAPON_CACHE_DIM;
+
+struct CydWeaponCacheSlot {
+    int shapenum = -1;
+    uint32_t lastUse = 0;
+    byte pixels[CYD_WEAPON_CACHE_DIM * CYD_WEAPON_CACHE_DIM];
+};
+
+CydWeaponCacheSlot cydWeaponCache[CYD_WOLF_WEAPON_CACHE_SLOTS];
+uint32_t cydWeaponCacheClock = 0;
+}
+
+static int CydChooseWeaponCacheSlot(int shapenum)
+{
+    int best = 0;
+    for(int i = 0; i < CYD_WOLF_WEAPON_CACHE_SLOTS; ++i)
+    {
+        if(cydWeaponCache[i].shapenum == shapenum)
+            return i;
+        if(cydWeaponCache[i].shapenum < 0)
+            return i;
+        if(cydWeaponCache[i].lastUse < cydWeaponCache[best].lastUse)
+            best = i;
+    }
+    return best;
+}
+
+static void CydBuildWeaponCache(int slotIndex, int shapenum)
+{
+    CydWeaponCacheSlot &slot = cydWeaponCache[slotIndex];
+    memset(slot.pixels, 0, sizeof(slot.pixels));
+
+    t_compshape *shape = (t_compshape *) PM_GetSprite(shapenum);
+    word *cmdptr = (word *) shape->dataofs;
+
+    for(int i = shape->leftpix; i <= shape->rightpix; ++i, ++cmdptr)
+    {
+        if(i < 0 || i >= 64)
+            continue;
+
+        byte *line = (byte *)shape + *cmdptr;
+        unsigned endy;
+        while((endy = READWORD(line)) != 0)
+        {
+            endy >>= 1;
+            short newstart = READWORD(line);
+            unsigned starty = READWORD(line) >> 1;
+            for(unsigned j = starty; j < endy && j < 64; ++j)
+            {
+                byte col = ((byte *)shape)[newstart + j];
+                if(!col)
+                    continue;
+                int cx = (i * CYD_WEAPON_CACHE_DIM) >> 6;
+                int cy = ((int)j * CYD_WEAPON_CACHE_DIM) >> 6;
+                if(cx >= 0 && cx < CYD_WEAPON_CACHE_DIM &&
+                   cy >= 0 && cy < CYD_WEAPON_CACHE_DIM)
+                    slot.pixels[cy * CYD_WEAPON_CACHE_DIM + cx] = col;
+            }
+        }
+    }
+
+    slot.shapenum = shapenum;
+}
+
+static bool CydScaleCachedWeapon(int xcenter, int shapenum, unsigned height)
+{
+    if(CYD_WOLF_WEAPON_CACHE_SLOTS <= 0)
+        return false;
+
+    int slotIndex = CydChooseWeaponCacheSlot(shapenum);
+    CydWeaponCacheSlot &slot = cydWeaponCache[slotIndex];
+    if(slot.shapenum != shapenum)
+        CydBuildWeaponCache(slotIndex, shapenum);
+    slot.lastUse = ++cydWeaponCacheClock;
+
+    unsigned scale = height >> 1;
+    if(!scale)
+        return true;
+
+    const int outSize = (int)scale * 2;
+    if(outSize <= 0)
+        return true;
+
+    const int outLeft = xcenter - (int)scale;
+    const int outTop = viewheight / 2 - (int)scale;
+    int left = outLeft;
+    int top = outTop;
+    int right = outLeft + outSize - 1;
+    int bottom = outTop + outSize - 1;
+
+    if(right < 0 || bottom < 0 || left >= viewwidth || top >= viewheight)
+        return true;
+    if(left < 0) left = 0;
+    if(top < 0) top = 0;
+    if(right >= viewwidth) right = viewwidth - 1;
+    if(bottom >= viewheight) bottom = viewheight - 1;
+
+    for(int y = top; y <= bottom; ++y)
+    {
+        int sy = ((y - outTop) * CYD_WEAPON_CACHE_DIM) / outSize;
+        if(sy < 0) sy = 0;
+        if(sy >= CYD_WEAPON_CACHE_DIM) sy = CYD_WEAPON_CACHE_DIM - 1;
+        byte *dst = vbuf + y * vbufPitch + left;
+        for(int x = left; x <= right; x += 2)
+        {
+            int sx = ((x - outLeft) * CYD_WEAPON_CACHE_DIM) / outSize;
+            if(sx < 0) sx = 0;
+            if(sx >= CYD_WEAPON_CACHE_DIM) sx = CYD_WEAPON_CACHE_DIM - 1;
+            byte col = slot.pixels[sy * CYD_WEAPON_CACHE_DIM + sx];
+            if(col)
+            {
+                dst[x - left] = col;
+                if(x + 1 <= right)
+                    dst[x + 1 - left] = col;
+            }
+        }
+    }
+
+    return true;
+}
 #endif
 
 /*
@@ -900,7 +1155,7 @@ void HitVertWall (void)
     postwallpic = wallpic;
 #endif
 
-#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+#if defined(WOLF3D_CYD_PORT) && (CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES)
     postsource = nullptr;
 #else
     postsource = PM_GetTexture(wallpic) + texture;
@@ -973,7 +1228,7 @@ void HitHorizWall (void)
     postwallpic = wallpic;
 #endif
 
-#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+#if defined(WOLF3D_CYD_PORT) && (CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES)
     postsource = nullptr;
 #else
     postsource = PM_GetTexture(wallpic) + texture;
@@ -1046,7 +1301,7 @@ void HitHorizDoor (void)
     postwallpic = doorpage;
 #endif
 
-#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+#if defined(WOLF3D_CYD_PORT) && (CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES)
     postsource = nullptr;
 #else
     postsource = PM_GetTexture(doorpage) + texture;
@@ -1119,7 +1374,7 @@ void HitVertDoor (void)
     postwallpic = doorpage;
 #endif
 
-#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FLAT_WALLS
+#if defined(WOLF3D_CYD_PORT) && (CYD_WOLF_FLAT_WALLS || CYD_WOLF_LOW_RES_WALL_TEXTURES)
     postsource = nullptr;
 #else
     postsource = PM_GetTexture(doorpage) + texture;
@@ -1240,6 +1495,13 @@ void ScaleShape (int xcenter, int shapenum, unsigned height, uint32_t flags)
 
 #if defined(WOLF3D_CYD_PORT) && CYD_WOLF_FAST_SPRITES
     const bool cydStaticDecor = (flags & CYD_VIS_STATIC_DECOR) != 0;
+#if CYD_WOLF_ACTOR_IMPOSTORS
+    if(flags & CYD_VIS_ACTOR)
+    {
+        CydScaleActorImpostor(xcenter, shapenum, height);
+        return;
+    }
+#endif
 #if CYD_WOLF_STATIC_DECOR_IMPOSTORS
     if(cydStaticDecor)
     {
@@ -1741,7 +2003,12 @@ void DrawPlayerWeapon (void)
     if (gamestate.weapon != wp_none)
     {
         shapenum = weaponscale[gamestate.weapon]+gamestate.weaponframe;
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_DOWNSAMPLED_WEAPON
+        if(!CydScaleCachedWeapon(viewwidth/2, shapenum, viewheight+1))
+            SimpleScaleShape(viewwidth/2,shapenum,viewheight+1);
+#else
         SimpleScaleShape(viewwidth/2,shapenum,viewheight+1);
+#endif
 #ifdef WOLF3D_CYD_PORT
         cyd_trace_sprite(shapenum, CYD_TRACE_SPRITE_WEAPON, viewheight + 1);
 #endif
@@ -2020,7 +2287,7 @@ void AsmRefresh()
     longword xpartial = 0,ypartial = 0;
     boolean playerInPushwallBackTile = tilemap[focaltx][focalty] == 64;
 
-    for(pixx=0;pixx<viewwidth;pixx++)
+    for(pixx=0;pixx<viewwidth;pixx+=CYD_WOLF_WALL_COLUMN_STEP)
     {
         short angl=midangle+pixelangle[pixx];
         if(angl<0) angl+=FINEANGLES;

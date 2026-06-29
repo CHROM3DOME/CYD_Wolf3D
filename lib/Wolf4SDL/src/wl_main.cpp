@@ -1375,9 +1375,6 @@ static void InitGame()
                           (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
 
     CA_CacheGrChunk(STARTFONT);
-#ifdef WOLF3D_CYD_PORT
-    CA_CacheGrChunk(STARTFONT + 1);
-#endif
 
     furi_log_print_format(2, "Wolf3D", "After font cache: Free Heap = %u, Largest block = %u",
                           (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
@@ -1977,9 +1974,11 @@ extern char configdir[256];
  * Wolf4SDLs `ingame`-Flag (id_us.h) ist true zwischen NewGame und Game-Exit;
  * `g_wolf3d_in_menu` wird vom US_ControlPanel-Wrapper hochgezogen, sodass
  * auch das in-game-pause-menu als "Menu" erkannt wird. */
-extern "C" volatile int g_wolf3d_in_menu = 0;
-extern "C" int wolf3d_is_ingame(void) {
+extern "C" {
+volatile int g_wolf3d_in_menu = 0;
+int wolf3d_is_ingame(void) {
     return (ingame && !g_wolf3d_in_menu) ? 1 : 0;
+}
 }
 
 int main (int argc, char *argv[])

@@ -3484,15 +3484,21 @@ SetupControlPanel (void)
     //
     // CACHE GRAPHICS & SOUNDS
     //
+#ifndef WOLF3D_CYD_PORT
     CA_CacheGrChunk (STARTFONT + 1);
 #ifndef SPEAR
     CacheLump (CONTROLS_LUMP_START, CONTROLS_LUMP_END);
 #else
     CacheLump (BACKDROP_LUMP_START, BACKDROP_LUMP_END);
 #endif
+#endif
 
     SETFONTCOLOR (TEXTCOLOR, BKGDCOLOR);
+#ifdef WOLF3D_CYD_PORT
+    fontnumber = 0;
+#else
     fontnumber = 1;
+#endif
     WindowH = 200;
     if(screenHeight % 200 != 0)
         VL_ClearScreen(0);
@@ -3551,10 +3557,18 @@ void SetupSaveGames()
 void
 CleanupControlPanel (void)
 {
+#ifdef WOLF3D_CYD_PORT
+    UNCACHEGRCHUNK (C_OPTIONSPIC);
+    UNCACHEGRCHUNK (C_CURSOR1PIC);
+    UNCACHEGRCHUNK (C_CURSOR2PIC);
+    UNCACHEGRCHUNK (C_MOUSELBACKPIC);
+    UNCACHEGRCHUNK (STARTFONT + 1);
+#else
 #ifndef SPEAR
     UnCacheLump (CONTROLS_LUMP_START, CONTROLS_LUMP_END);
 #else
     UnCacheLump (BACKDROP_LUMP_START, BACKDROP_LUMP_END);
+#endif
 #endif
 
     fontnumber = 0;
@@ -4111,6 +4125,15 @@ Message (const char *string)
     CA_CacheGrChunk (STARTFONT + 1);
     fontnumber = 1;
     void *p = grsegs[STARTFONT + fontnumber];
+#ifdef WOLF3D_CYD_PORT
+    if (!p)
+    {
+        fontnumber = 0;
+        p = grsegs[STARTFONT];
+    }
+    if (!p)
+        return;
+#endif
     font = (fontstruct *) p;
     h = font->height;
     for (i = 0; i < len; i++)

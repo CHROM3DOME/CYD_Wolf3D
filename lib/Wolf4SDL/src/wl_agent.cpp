@@ -3,8 +3,91 @@
 #include "wl_def.h"
 
 #ifdef WOLF3D_CYD_PORT
+#ifndef CYD_S2_FACE_ENABLE
+#define CYD_S2_FACE_ENABLE 1
+#endif
+#ifndef CYD_S2_FACE_DOWNSAMPLE
+#define CYD_S2_FACE_DOWNSAMPLE 1
+#endif
+#ifndef CYD_S2_FACE_LATCH_SURFACES
+#define CYD_S2_FACE_LATCH_SURFACES 0
+#endif
+#if CYD_S2_FACE_DOWNSAMPLE < 1
+#undef CYD_S2_FACE_DOWNSAMPLE
+#define CYD_S2_FACE_DOWNSAMPLE 1
+#endif
 extern "C" void cyd_wolf_flash_event(int kind, int level, int durationMs);
 extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int height);
+#endif
+
+#if defined(WOLF3D_CYD_PORT) && CYD_S2_FACE_ENABLE
+namespace {
+constexpr int CYD_FACE_PACKET_MAX_PIXELS = 24 * 32;
+byte cydFacePacket[CYD_FACE_PACKET_MAX_PIXELS];
+
+byte CydPlanarPicPixel(byte *source, int width, int height, int x, int y)
+{
+    if(!source || width <= 0 || height <= 0)
+        return 0;
+    if(x < 0) x = 0;
+    if(y < 0) y = 0;
+    if(x >= width) x = width - 1;
+    if(y >= height) y = height - 1;
+
+    const int planeWidth = width >> 2;
+    if(planeWidth <= 0)
+        return source[y * width + x];
+    return source[(y * planeWidth + (x >> 2)) + (x & 3) * planeWidth * height];
+}
+
+void CydStreamFacePic(unsigned picnum)
+{
+    if(picnum < STARTPICS)
+        return;
+    const int picIndex = (int)picnum - STARTPICS;
+    const int width = pictable[picIndex].width;
+    const int height = pictable[picIndex].height;
+    if(width <= 0 || height <= 0)
+        return;
+
+    bool cachedHere = false;
+    if(!grsegs[picnum])
+    {
+        CA_CacheGrChunk(picnum);
+        cachedHere = true;
+    }
+    byte *source = grsegs[picnum];
+    if(!source)
+        return;
+
+    const int outWidth = (width + CYD_S2_FACE_DOWNSAMPLE - 1) / CYD_S2_FACE_DOWNSAMPLE;
+    const int outHeight = (height + CYD_S2_FACE_DOWNSAMPLE - 1) / CYD_S2_FACE_DOWNSAMPLE;
+    if(outWidth <= 0 || outHeight <= 0 ||
+       outWidth * outHeight > CYD_FACE_PACKET_MAX_PIXELS)
+    {
+        if(cachedHere)
+            UNCACHEGRCHUNK(picnum);
+        return;
+    }
+
+    for(int y = 0; y < outHeight; ++y)
+    {
+        int sy = y * CYD_S2_FACE_DOWNSAMPLE;
+        if(sy >= height) sy = height - 1;
+        for(int x = 0; x < outWidth; ++x)
+        {
+            int sx = x * CYD_S2_FACE_DOWNSAMPLE;
+            if(sx >= width) sx = width - 1;
+            cydFacePacket[y * outWidth + x] = CydPlanarPicPixel(source, width, height, sx, sy);
+        }
+    }
+
+    cyd_send_face_sprite(cydFacePacket, outWidth, outHeight);
+
+    if(cachedHere)
+        UNCACHEGRCHUNK(picnum);
+}
+}
 #endif
 
 /*
@@ -273,8 +356,14 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 
 void StatusDrawFace(unsigned picnum)
 {
-#ifdef WOLF3D_CYD_PORT
+#if defined(WOLF3D_CYD_PORT) && CYD_S2_FACE_ENABLE
+    static unsigned lastSentPicnum = (unsigned)-1;
+    if(picnum == lastSentPicnum)
+        return;
+    lastSentPicnum = picnum;
+
     if (picnum >= LATCHPICS_LUMP_START && picnum <= LATCHPICS_LUMP_END) {
+#if CYD_S2_FACE_LATCH_SURFACES
         int idx = 2 + picnum - LATCHPICS_LUMP_START;
         if (idx >= 0 && idx < NUMLATCHPICS) {
             SDL_Surface *surf = latchpics[idx];
@@ -282,6 +371,9 @@ void StatusDrawFace(unsigned picnum)
                 cyd_send_face_sprite((const uint8_t *)surf->pixels, surf->w, surf->h);
             }
         }
+#else
+        CydStreamFacePic(picnum);
+#endif
     }
 #endif
     StatusDrawPic(17, 4, picnum);

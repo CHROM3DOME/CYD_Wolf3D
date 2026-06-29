@@ -8,6 +8,10 @@ extern "C" void cyd_trace_sound(int sound, int usedPcm);
 #define CYD_WOLF_BASIC_SOUND 0
 #endif
 
+#ifndef CYD_WOLF_SOUND_TRACE
+#define CYD_WOLF_SOUND_TRACE 0
+#endif
+
 #ifndef AUDIO_DAC_PIN
 #define AUDIO_DAC_PIN 26
 #endif
@@ -246,11 +250,13 @@ bool pinDigiForSound(soundnames sound) {
     }
 
     pinnedDigi = digi;
+#if CYD_WOLF_SOUND_TRACE
     furi_log_print_format(2, "Wolf3D", "PCM snd %i digi %i page %i abs %u len %u play %u seg %u lastPage %i%s",
                           (int)sound, digi, startPage, (unsigned)firstPage,
                           (unsigned)declaredLen, (unsigned)pinnedTotalLen,
                           (unsigned)pinnedSegmentCount, lastPage,
                           remaining ? " TRUNC" : "");
+#endif
     return pinnedSegmentCount > 0;
 #else
     (void)sound;

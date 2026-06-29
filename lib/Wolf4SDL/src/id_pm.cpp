@@ -127,6 +127,18 @@ void PM_ClearCache()
     }
 }
 
+void PM_ResetCachePages()
+{
+    PM_ClearHotPages();
+    for(int i = 0; i < PM_CACHE_SLOTS; ++i)
+    {
+        PMCache[i].page = -1;
+        PMCache[i].lastUse = 0;
+        PMCache[i].pinned = false;
+    }
+    PMCacheClock = 0;
+}
+
 void PM_PreallocateCache()
 {
     for(int i = 0; i < PM_PREALLOC_SLOTS; ++i)

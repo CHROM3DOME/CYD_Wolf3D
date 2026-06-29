@@ -688,12 +688,18 @@ void CheckKeys (void)
         ClearMemory ();
         CA_ClearSoundCache ();
         CydFreeWallCache ();
-        PM_ClearCache ();
+        PM_ResetCachePages ();
 
         furi_log_print_format(2, "Wolf3D", "Menu open: Free Heap after purge = %u, Largest block = %u",
                               (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
 
-        US_ControlPanel (sc_Escape);
+        IN_ClearKeysDown ();
+        buttonstate[bt_esc] = false;
+        buttonheld[bt_esc] = false;
+        WaitKeyUp ();
+        IN_ClearKeysDown ();
+
+        US_ControlPanel (sc_None);
         SETFONTCOLOR (0, 15);
         IN_ClearKeysDown ();
         if(viewsize != 21)

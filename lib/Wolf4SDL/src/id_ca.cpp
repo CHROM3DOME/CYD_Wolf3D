@@ -25,11 +25,23 @@ loaded into the data segment
 #include "wl_def.h"
 
 #ifdef WOLF3D_CYD_PORT
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 extern "C" void cyd_wolf3d_status(const char *message);
 extern "C" void cyd_trace_gr_request(int chunk, int32_t compressedBytes);
 extern "C" void cyd_trace_gr_expand(int chunk, int32_t expandedBytes);
+
+static bool CydSkipGrChunk(int chunk)
+{
+    if (chunk == STARTFONT + 1)
+        return true;
+#ifdef CONTROLS_LUMP_START
+    if (chunk >= CONTROLS_LUMP_START && chunk <= CONTROLS_LUMP_END)
+        return true;
+#endif
+    return false;
+}
 #endif
 
 #define THREEBYTEGRSTARTS
@@ -965,13 +977,14 @@ void CAL_ExpandGrChunk (int chunk, int32_t *source)
 #ifdef WOLF3D_CYD_PORT
     cyd_trace_gr_expand(chunk, expanded);
 #endif
-    if (chunk == STARTFONT + 1 && expanded <= 12314) {
-        static byte cydFontMetricsBuffer[12314];
-        grsegs[chunk] = cydFontMetricsBuffer;
-    } else {
-        grsegs[chunk] = (byte *) malloc(expanded);
-    }
+    grsegs[chunk] = (byte *) malloc(expanded);
     if (!grsegs[chunk]) {
+#ifdef WOLF3D_CYD_PORT
+        furi_log_print_format(2, "Wolf3D",
+            "OOM graphics chunk %i expanded %i heap %u largest %u",
+            chunk, (int)expanded, (unsigned)esp_get_free_heap_size(),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+#endif
         Quit("OOM allocating chunk %i of size %i", chunk, (int)expanded);
     }
     CAL_HuffExpand((byte *) source, grsegs[chunk], expanded, grhuffman);
@@ -993,6 +1006,14 @@ void CA_CacheGrChunk (int chunk)
     int32_t pos,compressed;
     int32_t *source;
     int  next;
+
+#ifdef WOLF3D_CYD_PORT
+    if (CydSkipGrChunk(chunk))
+    {
+        cyd_trace_gr_request(chunk, 0);
+        return;
+    }
+#endif
 
     if (grsegs[chunk])
     {
@@ -1033,7 +1054,19 @@ void CA_CacheGrChunk (int chunk)
     else
     {
         source = (int32_t *) malloc(compressed);
+#ifdef WOLF3D_CYD_PORT
+        if (!source)
+        {
+            furi_log_print_format(2, "Wolf3D",
+                "OOM graphics temp chunk %i compressed %i pos %i heap %u largest %u",
+                chunk, (int)compressed, (int)pos,
+                (unsigned)esp_get_free_heap_size(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            Quit("Out of memory at %s:%i", __FILE__, __LINE__);
+        }
+#else
         CHECKMALLOCRESULT(source);
+#endif
         if (read(grhandle,source,compressed) < 0)
         {
             free(source);

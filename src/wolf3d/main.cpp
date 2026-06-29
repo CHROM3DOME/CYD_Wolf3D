@@ -11,6 +11,23 @@
 #define CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT 100
 #endif
 
+#ifndef CYD_S2_FACE_ENABLE
+#define CYD_S2_FACE_ENABLE 1
+#endif
+
+#ifndef CYD_WOLF_USE_DMA_PRESENT
+#define CYD_WOLF_USE_DMA_PRESENT 0
+#endif
+
+#ifndef CYD_WOLF_DMA_STRIPE_ROWS
+#define CYD_WOLF_DMA_STRIPE_ROWS 8
+#endif
+
+#if CYD_WOLF_DMA_STRIPE_ROWS < 1
+#undef CYD_WOLF_DMA_STRIPE_ROWS
+#define CYD_WOLF_DMA_STRIPE_ROWS 1
+#endif
+
 extern "C" int wolf_main(int argc, char *argv[]);
 extern "C" int wolf3d_is_ingame(void);
 
@@ -24,14 +41,32 @@ SPIClass wolfSdSpi(VSPI);
 
 namespace {
 uint16_t palette565[256] = {};
-uint16_t stripe[320 * 8];
+#if CYD_WOLF_USE_DMA_PRESENT
+constexpr int kPresentStripeBuffers = 2;
+#else
+constexpr int kPresentStripeBuffers = 1;
+#endif
+uint16_t stripe[kPresentStripeBuffers][320 * CYD_WOLF_DMA_STRIPE_ROWS];
+bool tftDmaReady = false;
+bool tftDmaWriteOpen = false;
 
 const char *requiredBaseNames[] = {
   "AUDIOHED", "AUDIOT", "GAMEMAPS", "MAPHEAD",
   "VGADICT", "VGAGRAPH", "VGAHEAD", "VSWAP",
 };
 
+void finishDmaPresent() {
+#if CYD_WOLF_USE_DMA_PRESENT
+  if (tftDmaWriteOpen) {
+    wolfTft.dmaWait();
+    wolfTft.endWrite();
+    tftDmaWriteOpen = false;
+  }
+#endif
+}
+
 void fatalScreen(const String &message) {
+  finishDmaPresent();
   wolfTft.fillScreen(TFT_BLACK);
   wolfTft.setTextColor(TFT_RED, TFT_BLACK);
   wolfTft.drawString("WOLF3D PORT", 12, 12, 4);
@@ -97,6 +132,7 @@ void fatalScreen(const String &message) {
 }
 
 void statusScreen(const String &message) {
+  finishDmaPresent();
   wolfTft.fillRect(0, 86, 320, 40, TFT_BLACK);
   wolfTft.setTextColor(TFT_GREEN, TFT_BLACK);
   wolfTft.drawString(message, 12, 96, 2);
@@ -166,6 +202,7 @@ extern "C" void cyd_set_palette(const uint8_t *rgb, int first, int count) {
 }
 
 extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int height) {
+#if CYD_S2_FACE_ENABLE
   if (!pixels || width <= 0 || height <= 0) return;
   
   // Write packet header: Sync (0xAA, 0x55), width, height
@@ -181,6 +218,11 @@ extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int heigh
     Serial.write((uint8_t)(color >> 8));
     Serial.write((uint8_t)(color & 0xFF));
   }
+#else
+  (void)pixels;
+  (void)width;
+  (void)height;
+#endif
 }
 
 
@@ -195,17 +237,38 @@ void presentIndexedRect(const uint8_t *pixels, int width, int height, int pitch,
   if (rectWidth <= 0 || rectHeight <= 0) return;
 
   const int top = max(0, (240 - height) / 2);
-  wolfTft.startWrite();
-  for (int y0 = 0; y0 < rectHeight; y0 += 8) {
-    const int rows = min(8, rectHeight - y0);
+  if (!tftDmaWriteOpen) {
+    wolfTft.startWrite();
+    tftDmaWriteOpen = true;
+  }
+  int stripeIndex = 0;
+  for (int y0 = 0; y0 < rectHeight; y0 += CYD_WOLF_DMA_STRIPE_ROWS) {
+    const int rows = min(CYD_WOLF_DMA_STRIPE_ROWS, rectHeight - y0);
+    uint16_t *targetBase = stripe[stripeIndex];
     for (int row = 0; row < rows; ++row) {
       const uint8_t *source = pixels + (sourceY + y0 + row) * pitch + sourceX;
-      uint16_t *target = stripe + row * rectWidth;
+      uint16_t *target = targetBase + row * rectWidth;
       for (int x = 0; x < rectWidth; ++x) target[x] = palette565[source[x]];
     }
-    wolfTft.pushImage(sourceX, top + sourceY + y0, rectWidth, rows, stripe);
+#if CYD_WOLF_USE_DMA_PRESENT
+    if (tftDmaReady) {
+      wolfTft.pushImageDMA(sourceX, top + sourceY + y0, rectWidth, rows, targetBase);
+      stripeIndex ^= 1;
+    } else
+#endif
+    {
+      wolfTft.pushImage(sourceX, top + sourceY + y0, rectWidth, rows, targetBase);
+    }
   }
+#if !CYD_WOLF_USE_DMA_PRESENT
   wolfTft.endWrite();
+  tftDmaWriteOpen = false;
+#else
+  if (!tftDmaReady) {
+    wolfTft.endWrite();
+    tftDmaWriteOpen = false;
+  }
+#endif
 }
 
 extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height, int pitch) {
@@ -254,12 +317,18 @@ void setup() {
   wolfTft.init();
   wolfTft.setRotation(DISPLAY_ROTATION);
   wolfTft.setSwapBytes(true);
+#if CYD_WOLF_USE_DMA_PRESENT
+  tftDmaReady = wolfTft.initDMA();
+  Serial.printf("TFT DMA present %s\n", tftDmaReady ? "enabled" : "disabled");
+#endif
 
+#if CYD_S2_FACE_ENABLE
   // Send connection test pattern (16x16 red square) to S2 Mini using native color565
   palette565[14] = wolfTft.color565(255, 0, 0); // Red
   uint8_t testPixels[16 * 16];
   memset(testPixels, 14, sizeof(testPixels));
   cyd_send_face_sprite(testPixels, 16, 16);
+#endif
 
   // Display visual build confirmation on CYD boot screen
   wolfTft.fillScreen(TFT_BLACK);

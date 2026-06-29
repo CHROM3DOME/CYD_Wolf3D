@@ -12,7 +12,7 @@
 
 #ifdef WOLF3D_CYD_PORT
 #define UNCACHEGRCHUNK(chunk) { \
-    if(grsegs[chunk] && (chunk) != STARTFONT && (chunk) != (STARTFONT+1)) { \
+    if(grsegs[chunk] && (chunk) != STARTFONT) { \
         free(grsegs[chunk]); \
         grsegs[chunk]=NULL; \
     } \

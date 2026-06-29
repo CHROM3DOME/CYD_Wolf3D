@@ -20,6 +20,9 @@ extern uint8_t **PMPages;
 void PM_Startup();
 void PM_Shutdown();
 void PM_ClearCache();
+#ifdef WOLF3D_CYD_PORT
+void PM_ResetCachePages();
+#endif
 
 #ifdef WOLF3D_CYD_PORT
 uint32_t PM_GetPageSize(int page);
