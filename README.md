@@ -228,8 +228,5 @@ Configure performance adjustments and features in [include/board_config.h](inclu
 
 ## Licensing
 
-This repository contains modified Wolf4SDL and id Software source code. Original licenses remain in [lib/Wolf4SDL/src](lib/Wolf4SDL/src):
-*   [license-gpl.txt](lib/Wolf4SDL/src/license-gpl.txt)
-*   [license-id.txt](lib/Wolf4SDL/src/license-id.txt)
-
+This repository contains modified Wolf4SDL and id Software source code. Original licenses remain in (lib/Wolf4SDL/src):
 *Note: Wolfenstein 3D commercial assets are the property of their respective owners. Do not commit or distribute game data, extracted sound effects, or sprite caches.*
