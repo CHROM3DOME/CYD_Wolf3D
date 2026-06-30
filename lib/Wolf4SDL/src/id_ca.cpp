@@ -807,6 +807,25 @@ int32_t CA_CacheAudioChunk (int chunk)
     return size;
 }
 
+int32_t CA_ReadAudioChunk (int chunk, byte *dest, int32_t destSize)
+{
+    if(!dest || destSize <= 0 || chunk < 0 || chunk >= NUMSNDCHUNKS)
+        return 0;
+
+    int32_t pos = audiostarts[chunk];
+    int32_t size = audiostarts[chunk+1]-pos;
+    if(size <= 0)
+        return 0;
+    if(size > destSize)
+        size = destSize;
+
+    lseek(audiohandle, pos, SEEK_SET);
+    if(read(audiohandle, dest, size) < 0)
+        return 0;
+
+    return size;
+}
+
 void CA_CacheAdlibSoundChunk (int chunk)
 {
     int32_t pos = audiostarts[chunk];
@@ -1078,6 +1097,54 @@ void CA_CacheGrChunk (int chunk)
 
     if (compressed>BUFFERSIZE)
         free(source);
+}
+
+int32_t CA_ReadGrChunkExpanded (int chunk, byte *dest, int32_t destSize)
+{
+    int32_t pos, compressed, expanded;
+    int32_t *source;
+    int next;
+
+    if(!dest || destSize <= 0 || chunk < 0 || chunk >= NUMCHUNKS)
+        return 0;
+
+#ifdef WOLF3D_CYD_PORT
+    if (CydSkipGrChunk(chunk))
+    {
+        cyd_trace_gr_request(chunk, 0);
+        return 0;
+    }
+#endif
+
+    pos = GRFILEPOS(chunk);
+    if(pos < 0)
+        return 0;
+
+    next = chunk + 1;
+    while(GRFILEPOS(next) == -1)
+        next++;
+
+    compressed = GRFILEPOS(next) - pos;
+#ifdef WOLF3D_CYD_PORT
+    cyd_trace_gr_request(chunk, compressed);
+#endif
+    if(compressed <= 4 || compressed > BUFFERSIZE)
+        return 0;
+
+    lseek(grhandle, pos, SEEK_SET);
+    if(read(grhandle, bufferseg, compressed) < 0)
+        return 0;
+
+    source = bufferseg;
+    expanded = *source++;
+    if(expanded <= 0 || expanded > destSize)
+        return 0;
+
+#ifdef WOLF3D_CYD_PORT
+    cyd_trace_gr_expand(chunk, expanded);
+#endif
+    CAL_HuffExpand((byte *) source, dest, expanded, grhuffman);
+    return expanded;
 }
 
 

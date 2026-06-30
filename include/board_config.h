@@ -28,7 +28,7 @@
 // Wolf3D display profile.
 #define CYD_WOLF_VIEW_SIZE 20
 
-#define CYD_WOLF_BUILD_NUMBER 31
+#define CYD_WOLF_BUILD_NUMBER 36
 
 #define CYD_WOLF_PALETTE_BRIGHTNESS_PERCENT 160
 

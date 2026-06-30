@@ -23,7 +23,9 @@ extern "C" void cyd_send_face_sprite(const uint8_t *pixels, int width, int heigh
 #if defined(WOLF3D_CYD_PORT) && CYD_S2_FACE_ENABLE
 namespace {
 constexpr int CYD_FACE_PACKET_MAX_PIXELS = 24 * 32;
+constexpr int CYD_FACE_SOURCE_MAX_BYTES = 24 * 32;
 byte cydFacePacket[CYD_FACE_PACKET_MAX_PIXELS];
+byte cydFaceSource[CYD_FACE_SOURCE_MAX_BYTES];
 
 byte CydPlanarPicPixel(byte *source, int width, int height, int x, int y)
 {
@@ -50,13 +52,20 @@ void CydStreamFacePic(unsigned picnum)
     if(width <= 0 || height <= 0)
         return;
 
-    bool cachedHere = false;
-    if(!grsegs[picnum])
-    {
-        CA_CacheGrChunk(picnum);
-        cachedHere = true;
-    }
     byte *source = grsegs[picnum];
+    bool clearCachedSource = false;
+    if(!source)
+    {
+        if(width * height > CYD_FACE_SOURCE_MAX_BYTES)
+            return;
+        if(CA_ReadGrChunkExpanded(picnum, cydFaceSource, CYD_FACE_SOURCE_MAX_BYTES) < width * height)
+            return;
+        source = cydFaceSource;
+    }
+    else
+    {
+        clearCachedSource = true;
+    }
     if(!source)
         return;
 
@@ -65,7 +74,7 @@ void CydStreamFacePic(unsigned picnum)
     if(outWidth <= 0 || outHeight <= 0 ||
        outWidth * outHeight > CYD_FACE_PACKET_MAX_PIXELS)
     {
-        if(cachedHere)
+        if(clearCachedSource)
             UNCACHEGRCHUNK(picnum);
         return;
     }
@@ -84,7 +93,7 @@ void CydStreamFacePic(unsigned picnum)
 
     cyd_send_face_sprite(cydFacePacket, outWidth, outHeight);
 
-    if(cachedHere)
+    if(clearCachedSource)
         UNCACHEGRCHUNK(picnum);
 }
 }

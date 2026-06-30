@@ -17,17 +17,19 @@ extern "C" void cyd_trace_sound(int sound, int usedPcm);
 #endif
 
 namespace {
-constexpr int kToneChannel = 7;
 constexpr int kPcmMaxSegments = 2;
+constexpr int kPcSoundBufferSize = 2048;
 bool toneReady = false;
 uint32_t toneStopMs = 0;
 word currentSound = 0;
+bool currentPcSound = false;
 const uint8_t *pinnedPcm[kPcmMaxSegments] = {};
 uint32_t pinnedPcmLen[kPcmMaxSegments] = {};
 int pinnedPage[kPcmMaxSegments] = {-1, -1};
 uint8_t pinnedSegmentCount = 0;
 uint32_t pinnedTotalLen = 0;
 int pinnedDigi = -1;
+byte pcSoundBuffer[kPcSoundBufferSize];
 uint8_t pendingVolume = 192;
 bool pendingPositionedVolume = false;
 
@@ -38,6 +40,9 @@ extern "C" void cyd_hw_pcm_play(const uint8_t *data, uint32_t length);
 extern "C" void cyd_hw_pcm_play_segments(const uint8_t **segments, const uint32_t *lengths, uint8_t count);
 extern "C" bool cyd_hw_pcm_active(void);
 extern "C" void cyd_hw_pcm_stop(void);
+extern "C" void cyd_hw_pc_speaker_play(const uint8_t *data, uint32_t length);
+extern "C" bool cyd_hw_pc_speaker_active(void);
+extern "C" void cyd_hw_pc_speaker_stop(void);
 extern "C" void cyd_hw_audio_volume(uint8_t volume);
 
 uint8_t volumeFromPosition(int left, int right) {
@@ -89,7 +94,9 @@ void stopTone() {
     if(!toneReady) return;
     cyd_hw_tone(0);
     cyd_hw_pcm_stop();
+    cyd_hw_pc_speaker_stop();
     unpinCurrentPcm();
+    currentPcSound = false;
     toneStopMs = 0;
     currentSound = 0;
 #endif
@@ -98,6 +105,10 @@ void stopTone() {
 void playTone(word sound, uint16_t frequency, uint16_t durationMs) {
 #if CYD_WOLF_BASIC_SOUND
     ensureToneReady();
+    cyd_hw_pcm_stop();
+    cyd_hw_pc_speaker_stop();
+    unpinCurrentPcm();
+    currentPcSound = false;
     cyd_hw_audio_volume(consumePendingVolume());
     cyd_hw_tone(frequency);
     toneStopMs = cyd_hw_millis() + durationMs;
@@ -106,6 +117,46 @@ void playTone(word sound, uint16_t frequency, uint16_t durationMs) {
     (void)sound;
     (void)frequency;
     (void)durationMs;
+#endif
+}
+
+uint32_t readLe32(const byte *ptr) {
+    return (uint32_t)ptr[0] | ((uint32_t)ptr[1] << 8) |
+           ((uint32_t)ptr[2] << 16) | ((uint32_t)ptr[3] << 24);
+}
+
+bool playPcSpeakerSound(soundnames sound) {
+#if CYD_WOLF_BASIC_SOUND
+    if(sound < 0 || sound >= LASTSOUND)
+        return false;
+
+    const int chunk = STARTPCSOUNDS + (int)sound;
+    cyd_hw_pcm_stop();
+    cyd_hw_pc_speaker_stop();
+    unpinCurrentPcm();
+    currentPcSound = false;
+
+    int32_t chunkSize = CA_ReadAudioChunk(chunk, pcSoundBuffer, kPcSoundBufferSize);
+    if(chunkSize <= ORIG_SOUNDCOMMON_SIZE)
+        return false;
+
+    uint32_t length = readLe32(pcSoundBuffer);
+    const uint32_t maxLength = (uint32_t)chunkSize - ORIG_SOUNDCOMMON_SIZE;
+    if(length > maxLength)
+        length = maxLength;
+    if(!length)
+        return false;
+
+    ensureToneReady();
+    cyd_hw_audio_volume(consumePendingVolume());
+    cyd_hw_pc_speaker_play(pcSoundBuffer + ORIG_SOUNDCOMMON_SIZE, length);
+    currentSound = sound;
+    currentPcSound = true;
+    toneStopMs = 0;
+    return true;
+#else
+    (void)sound;
+    return false;
 #endif
 }
 
@@ -271,6 +322,8 @@ bool playPinnedPcm(soundnames sound) {
         return false;
 
     cyd_hw_tone(0);
+    cyd_hw_pc_speaker_stop();
+    currentPcSound = false;
     cyd_hw_audio_volume(consumePendingVolume());
     cyd_hw_pcm_play_segments(pinnedPcm, pinnedPcmLen, pinnedSegmentCount);
     toneStopMs = cyd_hw_millis() + (pinnedTotalLen / 7) + 20;
@@ -370,21 +423,33 @@ boolean SD_PlaySound(soundnames sound) {
             else if(sound == HALTSND || sound == DOGBARKSND) playTone(sound, 360, 100);
             else playTone(sound, 1150, 55);
             break;
-        case HITENEMYSND:      playTone(sound, 520, 70); break;
-        case GETKEYSND:        playTone(sound, 880, 110); break;
+        case HITENEMYSND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 520, 70);
+            break;
+        case GETKEYSND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 880, 110);
+            break;
         case GETAMMOSND:
         case GETMACHINESND:
-        case GETGATLINGSND:    playTone(sound, 720, 80); break;
+        case GETGATLINGSND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 720, 80);
+            break;
         case HEALTH1SND:
-        case HEALTH2SND:       playTone(sound, 660, 85); break;
+        case HEALTH2SND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 660, 85);
+            break;
         case BONUS1SND:
         case BONUS2SND:
         case BONUS3SND:
         case BONUS4SND:
-        case BONUS1UPSND:      playTone(sound, 980, 75); break;
+        case BONUS1UPSND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 980, 75);
+            break;
         case HITWALLSND:
         case NOWAYSND:
-        case NOITEMSND:        playTone(sound, 100, 55); break;
+        case NOITEMSND:
+            if(!playPcSpeakerSound(sound)) playTone(sound, 100, 55);
+            break;
         case PLAYERDEATHSND:   playTone(sound, 90, 300); break;
         default:
             cyd_trace_sound((int)sound, 0);
@@ -399,10 +464,22 @@ boolean SD_PlaySound(soundnames sound) {
 }
 word SD_SoundPlaying(void) {
 #if CYD_WOLF_BASIC_SOUND
+    if(currentPcSound)
+    {
+        if(cyd_hw_pc_speaker_active())
+            return currentSound;
+        currentPcSound = false;
+        currentSound = 0;
+        toneStopMs = 0;
+    }
     if(currentSound && cyd_hw_pcm_active())
         return currentSound;
     if(pinnedSegmentCount)
+    {
         unpinCurrentPcm();
+        currentSound = 0;
+        toneStopMs = 0;
+    }
     if(toneStopMs && cyd_hw_millis() >= toneStopMs)
         stopTone();
     return currentSound;
