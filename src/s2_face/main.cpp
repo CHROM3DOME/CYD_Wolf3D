@@ -3,7 +3,7 @@
 
 TFT_eSPI tft;
 
-// Serial RX pin on Lolin S2 Mini (connect to CYD GPIO 22 TX)
+// Serial RX pin on Lolin S2 Mini (connect to CYD GPIO 1 / P1 TX)
 #define RX_PIN 18
 #define TX_PIN 17
 

@@ -1,232 +1,272 @@
 # ESP32-CYD Wolf3D
 
-Wolfenstein 3D running on the classic ESP32 Cheap Yellow Display / ESP32-2432S028R style board.
+Wolfenstein 3D running on the ESP32 Cheap Yellow Display, also sold as the
+ESP32-2432S028R style board.
 
-This project started as a hardware tester for CYD clones and grew into a purpose-built ESP32 port of the Wolf4SDL engine. The active target is the full commercial Wolfenstein 3D data set (`.WL6`) on an SD card.
+This is a small-hardware port built around Wolf4SDL and the CYD's 320x240
+ILI9341 display, microSD slot, touch controller, and GPIO 26 DAC output. The
+default build targets the commercial `.WL6` data set, with a `.WL1` shareware
+build available as a separate PlatformIO environment.
 
----
+This repository contains source code only. It does not include Wolfenstein 3D
+game data, sprites, sounds, maps, or other commercial assets.
 
-## Status
+## Current Features
 
-The current Wolf3D build boots directly into gameplay on the CYD and includes:
+- Landscape ILI9341 display output on the CYD.
+- SD-card loading from `/wolf3d/`.
+- Playable renderer profile with DMA presentation, low-resolution wall texture
+  cache, actor sprites, static decoration handling, downsampled weapon graphics,
+  and streamed face graphics.
+- Touch controls for movement, use, and fire.
+- Optional MCP23017 I2C button controller.
+- GPIO 26 sound effects output using the ESP32 DAC.
+- Optional WEMOS Lolin S2 Mini + GC9A01 circular display for the status face.
+- Diagnostic CYD hardware tester firmware.
 
-*   **Landscape ILI9341 display output**
-*   **Touch/input scaffolding** (left half of touch screen controls movement, top right opens doors, bottom right fires)
-*   **SD-card loading** of Wolf3D assets
-*   **Simplified renderer** tuned specifically for ESP32 RAM and CPU limits
-*   **Flat-color walls** with selected low-resolution cached texture support
-*   **Static decoration impostors** and cache pools
-*   **Visible weapon/HUD build stamp**
-*   **Basic DAC/PCM sound output** through the common GPIO 26 audio path
-*   **Runtime page-cache** and sprite optimizations
+## Hardware
 
----
+### Primary Console
 
-## Hardware Targets & Pinouts
+- ESP32 Cheap Yellow Display / ESP32-2432S028R style board.
+- FAT32 microSD card.
+- Speaker or amplifier connected to the board's GPIO 26 DAC audio path.
+- Optional MCP23017-based controller on I2C.
 
-The project targets two hardware platforms: the **Cheap Yellow Display (CYD)** as the primary game console and an optional **WEMOS Lolin S2 Mini** to drive a secondary circular status face.
+### Optional Face Display
 
-### 1. ESP32 Cheap Yellow Display (ESP32-2432S028R)
+- WEMOS Lolin S2 Mini.
+- 240x240 GC9A01 circular LCD.
+- Serial connection from the CYD TX pin to the S2 Mini RX pin.
 
-The primary board uses an ESP32-WROOM module connected to a 320x240 ILI9341 TFT display, an XPT2046 resistive touch controller, a microSD slot, and a GPIO 26 audio path.
+## Game Data
 
-#### TFT Display (SPI)
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **TFT_MISO** | GPIO 12 | SPI Master In Slave Out |
-| **TFT_MOSI** | GPIO 13 | SPI Master Out Slave In |
-| **TFT_SCLK** | GPIO 14 | SPI Clock |
-| **TFT_CS** | GPIO 15 | Chip Select (Active Low) |
-| **TFT_DC** | GPIO 2 | Data / Command Select |
-| **TFT_RST** | *None* (-1) | Connected to EN hardware reset line |
-| **TFT_BL** | GPIO 21 | Backlight control (Active High) |
+Copy legally owned Wolfenstein 3D data files to a folder named `wolf3d` at the
+root of a FAT32-formatted microSD card.
 
-#### Resistive Touch Controller (XPT2046 SPI)
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **TOUCH_MOSI** | GPIO 32 | Touch SPI MOSI |
-| **TOUCH_MISO** | GPIO 39 | Touch SPI MISO |
-| **TOUCH_SCLK** | GPIO 25 | Touch SPI Clock |
-| **TOUCH_CS** | GPIO 33 | Touch Chip Select |
-| **TOUCH_IRQ** | GPIO 36 | Touch Interrupt Request |
-
-#### microSD Card Slot (SPI)
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **SD_MOSI** | GPIO 23 | SD SPI MOSI |
-| **SD_MISO** | GPIO 19 | SD SPI MISO |
-| **SD_SCLK** | GPIO 18 | SD SPI Clock |
-| **SD_CS** | GPIO 5 | SD Chip Select |
-
-#### Audio & Onboard Peripherals
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **AUDIO_DAC** | GPIO 26 | Mono audio DAC / PCM output channel |
-| **RGB Red** | GPIO 4 | Onboard RGB LED - Red channel (Active Low) |
-| **RGB Green**| GPIO 16 | Onboard RGB LED - Green channel (Active Low) |
-| **RGB Blue** | GPIO 17 | Onboard RGB LED - Blue channel (Active Low) |
-
-#### I2C & Serial Expansions
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **I2C SDA** | GPIO 27 | I2C Data (MCP23017 port expander) |
-| **I2C SCL** | GPIO 22 | I2C Clock (MCP23017 port expander) |
-| **CYD_S2_TX** | GPIO 1 | Serial TX to S2 Face Display (Primary Serial TX0 on programming port P1) |
-| **CYD_S2_RX** | -1 (None) | Unused (transmit-only stream) |
-
-> [!IMPORTANT]
-> **Solder-Free Conflict Resolution:**
-> To avoid pin conflicts with the **MCP23017** port expander on I2C pins GPIO 27 & 22, the face display uses the primary serial **TX0 (GPIO 1)** pin:
-> * Connect the **Lolin S2 Mini's RX pin (GPIO 18)** wire to the **TX pin (GPIO 1)** of the **programming port (P1)** JST header.
-> * Both console logs and binary face packets share this TX line at **460800 baud** without interfering with each other.
-
-#### MCP23017 Port Expander Button Mappings
-When `CYD_MCP23017_ENABLE` is set to `1` in `board_config.h`, the buttons are mapped as follows:
-
-| MCP23017 Pin | Game Function | SDL Key Code | Notes |
-|---|---|---|---|
-| **PA0** | Move Up | `SDLK_UP` | Directional Pad |
-| **PA1** | Move Down | `SDLK_DOWN` | Directional Pad |
-| **PA2** | Turn Left | `SDLK_LEFT` | Directional Pad |
-| **PA3** | Turn Right | `SDLK_RIGHT` | Directional Pad |
-| **PA4** | Unused | - | |
-| **PA5** | Select | `SDLK_PAUSE` | Binds to Game Pause |
-| **PA6** | L1 | - | Unused |
-| **PA7** | L2 | - | Unused |
-| **PB0** | R2 | - | Unused |
-| **PB1** | R1 | - | Unused |
-| **PB2** | Enter | `SDLK_RETURN` | Menu confirmation |
-| **PB3** | Start | `SDLK_ESCAPE` | Binds to Menu/Escape |
-| **PB4** | Upper Action | `SDLK_LALT` | Strafe / Side-step |
-| **PB5** | Lower Action | `SDLK_LSHIFT`| Run / Speed |
-| **PB6** | Right Action | `SDLK_SPACE`  | Open / Use door |
-| **PB7** | Left Action | `SDLK_LCTRL`  | Fire / Shoot |
-
----
-
-### 2. WEMOS Lolin S2 Mini (Secondary Status Face Display)
-
-This optional sub-system runs on a WEMOS Lolin S2 Mini connected to a circular GC9A01 LCD. It offloads B.J. Blazkowicz's status-bar face from the primary CYD to maximize rendering performance.
-
-#### GC9A01 Circular LCD Pinout (SPI)
-| Function | GPIO Pin | Description |
-|---|---|---|
-| **TFT_MISO** | *None* (-1) | Unused for display write path |
-| **TFT_MOSI** | GPIO 11 | SPI MOSI |
-| **TFT_SCLK** | GPIO 12 | SPI Clock |
-| **TFT_CS** | GPIO 10 | Chip Select |
-| **TFT_DC** | GPIO 14 | Data / Command Select |
-| **TFT_RST** | GPIO 15 | Hardware Reset |
-| **TFT_BL** | GPIO 13 | Backlight control (Active High) |
-
-#### Serial Interface (to CYD CN1 Header)
-| Function | GPIO Pin | Connection on CYD Board |
-|---|---|---|
-| **RX_PIN** | GPIO 18 | Connects to CYD TX (GPIO 22, or GPIO 17 if reconfigured) |
-| **TX_PIN** | GPIO 17 | Connects to CYD RX (GPIO 27) |
-| **5V / VIN** | 5V | Connects to CYD 5V/VIN |
-| **GND** | GND | Connects to CYD GND |
-
----
-
-## Build & Upload Instructions
-
-### Prerequisites
-1. Install [Visual Studio Code](https://code.visualstudio.com/).
-2. Install the [PlatformIO](https://platformio.org/) extension.
-3. Obtain a micro-USB (for CYD) or USB-C (for Lolin S2 Mini) data cable.
-
-### Firmware Targets (Environments)
-Select or build specific targets using PlatformIO:
-
-| Target Name | Description |
-|---|---|
-| `cyd_wolf3d` | **Default.** Primary Wolf3D game binary for Cheap Yellow Display. |
-| `cyd_wolf3d_wl1`| Shareware fallback target (using `.WL1` data files). |
-| `cyd_esp32` | Diagnostic hardware tester firmware for Cheap Yellow Display. |
-| `lolin_s2_mini` | Status face animation firmware for Lolin S2 Mini + GC9A01. |
-
-### Compilation and Flashing Commands
-
-Open a terminal at the repository root and use the following PlatformIO Core CLI commands:
-
-#### Build default target (`cyd_wolf3d`):
-```powershell
-.\pio.ps1 run
-```
-
-#### Upload default target to CYD:
-```powershell
-.\pio.ps1 run -t upload
-```
-
-#### Build and Upload a specific target:
-```powershell
-# Flash the diagnostic Hardware Tester to the CYD
-.\pio.ps1 run -e cyd_esp32 -t upload
-
-# Flash the secondary status face firmware to the Lolin S2 Mini
-.\pio.ps1 run -e lolin_s2_mini -t upload
-```
-
-#### Launch Serial Monitor:
-```powershell
-.\pio.ps1 device monitor -b 460800
-```
-
----
-
-## Game Data Setup
-
-Copy legally owned commercial Wolfenstein 3D data files into a folder named `/wolf3d/` at the root of a FAT32-formatted microSD card:
+For the commercial `.WL6` build:
 
 ```text
-SD CARD ROOT
-└── wolf3d
-    ├── AUDIOHED.WL6
-    ├── AUDIOT.WL6
-    ├── GAMEMAPS.WL6
-    ├── MAPHEAD.WL6
-    ├── VGADICT.WL6
-    ├── VGAGRAPH.WL6
-    ├── VGAHEAD.WL6
-    └── VSWAP.WL6
+SD card root:
+wolf3d/
+  AUDIOHED.WL6
+  AUDIOT.WL6
+  GAMEMAPS.WL6
+  MAPHEAD.WL6
+  VGADICT.WL6
+  VGAGRAPH.WL6
+  VGAHEAD.WL6
+  VSWAP.WL6
 ```
 
----
+For the shareware build, use the same file names with the `.WL1` extension and
+build the `cyd_wolf3d_wl1` environment.
 
-## Major Compiler & Configuration Flags
+## Build And Flash
 
-Configure performance adjustments and features in [include/board_config.h](include/board_config.h) or [platformio.ini](platformio.ini).
+Install PlatformIO with either the VS Code extension or the PlatformIO Core CLI.
+From the repository root, build and upload the default CYD game firmware:
 
-### Core Engine & Display settings
-*   `WOLF3D_CYD_PORT`: Flags the build environment to target CYD hardware routines.
-*   `CYD_WOLF_BUILD_NUMBER`: Changes the version number printed in the bottom right corner of the HUD (e.g. `24` prints as `0024`).
-*   `CYD_WOLF_VIEW_SIZE`: Adjusts rendering window scale (default: `20`).
-*   `CYD_WOLF_SKIP_BOOT_SCREENS`: Bypasses long intro animations to load directly to gameplay (default: `1`).
+```powershell
+pio run -e cyd_wolf3d
+pio run -e cyd_wolf3d -t upload
+```
 
-### Renderer & Cache Tweaks
-*   `CYD_WOLF_FLAT_WALLS`: Disables vertical texturing on walls, rendering solid colors to keep frame rates playable (default: `1`).
-*   `CYD_WOLF_WALL_TEXTURE_CACHE`: Caches specific wall textures dynamically in RAM (default: `1`).
-*   `CYD_WOLF_DRAW_SPRITES`: Enables/disables rendering enemies, hazards, and pick-ups (default: `1`).
-*   `CYD_WOLF_DRAW_WEAPON`: Enables/disables rendering of B.J.'s weapon animations (default: `1`).
-*   `CYD_WOLF_DRAW_STATUSBAR_ART`: Enables/disables local status bar drawing (default: `0` to optimize memory and offload B.J.'s face to the Lolin S2 Mini).
-*   `CYD_WOLF_FAST_SPRITES`: Employs an optimized sprite rendering routine (default: `1`).
-*   `CYD_WOLF_STATIC_DECOR_IMPOSTORS`: Replaces distant 3D static sprites with basic flat impostors to reduce processor load (default: `1`).
-*   `CYD_WOLF_HOT_PAGE_CACHE`: Caches active memory sectors from the SD card to prevent micro-stuttering (default: `1`).
+If PlatformIO does not pick the correct serial port automatically, pass it
+explicitly:
 
-### Port Expander & Peripherals
-*   `CYD_RGB_LED_ENABLE`: Enables RGB LED status displays during gameplay (default: `1`).
-*   `CYD_MCP23017_ENABLE`: Enables I2C connectivity for an MCP23017 port expander to map physical controller buttons (default: `1`).
-*   `CYD_WOLF_BASIC_SOUND`: Enables basic low-overhead sound effects through GPIO 26 (default: `1`).
+```powershell
+pio run -e cyd_wolf3d -t upload --upload-port COMx
+```
 
-### Debugging & Profiling (Disabled by default)
-*   `CYD_WOLF_ENABLE_PERF_LOGS`: Emits frame time statistics to the serial terminal.
-*   `CYD_WOLF_RESOURCE_TRACE`: Emits memory reports and SD read latency checks.
+Replace `COMx` with the port for your board.
 
----
+Useful environments:
 
-## Licensing
+| Environment | Purpose |
+| --- | --- |
+| `cyd_wolf3d` | Main CYD Wolf3D firmware for `.WL6` data. |
+| `cyd_wolf3d_wl1` | CYD Wolf3D firmware for `.WL1` shareware data. |
+| `cyd_esp32` | CYD hardware tester firmware. |
+| `lolin_s2_mini` | Optional S2 Mini status-face display firmware. |
 
-This repository contains modified Wolf4SDL and id Software source code. Original licenses remain in (lib/Wolf4SDL/src):
-*Note: Wolfenstein 3D commercial assets are the property of their respective owners. Do not commit or distribute game data, extracted sound effects, or sprite caches.*
+Serial monitor examples:
+
+```powershell
+pio device monitor -b 460800
+pio device monitor -e lolin_s2_mini -b 115200
+```
+
+## Controls
+
+### Touch Screen
+
+The default touch layout is split by screen region:
+
+| Region | Action |
+| --- | --- |
+| Left half, upper third | Move forward |
+| Left half, lower third | Move backward |
+| Left half, center-left | Turn left |
+| Left half, center-right | Turn right |
+| Right half, upper half | Open / use |
+| Right half, lower half | Fire |
+
+### MCP23017 Controller
+
+The optional MCP23017 controller uses active-low buttons with pull-ups enabled.
+Set `CYD_MCP23017_ENABLE` in [include/board_config.h](include/board_config.h) to
+enable or disable this input path.
+
+| MCP23017 pin | Game action |
+| --- | --- |
+| PA0 | Move forward |
+| PA1 | Move backward |
+| PA2 | Turn left |
+| PA3 | Turn right |
+| PA5 | Pause |
+| PB2 | Enter / menu confirm |
+| PB3 | Escape / menu |
+| PB4 | Strafe |
+| PB5 | Run |
+| PB6 | Open / use |
+| PB7 | Fire |
+
+## Pin Reference
+
+### CYD Display
+
+| Function | GPIO |
+| --- | --- |
+| TFT_MISO | 12 |
+| TFT_MOSI | 13 |
+| TFT_SCLK | 14 |
+| TFT_CS | 15 |
+| TFT_DC | 2 |
+| TFT_RST | -1 / board reset |
+| TFT_BL | 21 |
+
+### CYD Touch
+
+| Function | GPIO |
+| --- | --- |
+| TOUCH_MOSI | 32 |
+| TOUCH_MISO | 39 |
+| TOUCH_SCLK | 25 |
+| TOUCH_CS | 33 |
+| TOUCH_IRQ | 36 |
+
+### CYD microSD
+
+| Function | GPIO |
+| --- | --- |
+| SD_MOSI | 23 |
+| SD_MISO | 19 |
+| SD_SCLK | 18 |
+| SD_CS | 5 |
+
+### CYD Audio And Expansion
+
+| Function | GPIO |
+| --- | --- |
+| Audio DAC | 26 |
+| MCP23017 SDA | 27 |
+| MCP23017 SCL | 22 |
+| Face display serial TX | 1 |
+
+### Lolin S2 Mini Face Display
+
+| Function | GPIO |
+| --- | --- |
+| GC9A01 MOSI | 11 |
+| GC9A01 SCLK | 12 |
+| GC9A01 CS | 10 |
+| GC9A01 DC | 14 |
+| GC9A01 RST | 15 |
+| GC9A01 BL | 13 |
+| Serial RX from CYD GPIO 1 | 18 |
+
+The CYD sends face packets over its primary TX0 line at 460800 baud. If you use
+the optional face display, connect CYD GPIO 1 / P1 TX to S2 Mini GPIO 18 / RX.
+
+## Configuration
+
+Most firmware options are in [include/board_config.h](include/board_config.h).
+PlatformIO build-time flags are in [platformio.ini](platformio.ini).
+
+Common options:
+
+| Option | Purpose |
+| --- | --- |
+| `CYD_WOLF_BUILD_NUMBER` | Build number shown on the HUD. |
+| `CYD_WOLF_VIEW_SIZE` | Wolf3D view size. The current profile keeps this at `20`. |
+| `CYD_WOLF_USE_DMA_PRESENT` | Enables DMA-assisted TFT presentation. |
+| `CYD_WOLF_LOW_RES_WALL_TEXTURES` | Uses the reduced wall texture cache needed for playable speed. |
+| `CYD_WOLF_DRAW_SPRITES` | Enables actors, items, and decorations. |
+| `CYD_WOLF_DOWNSAMPLED_WEAPON` | Reduces weapon sprite cost. |
+| `CYD_S2_FACE_ENABLE` | Streams the status face to the optional S2 Mini display. |
+| `CYD_MCP23017_ENABLE` | Enables the I2C controller expander. |
+| `CYD_WOLF_BASIC_SOUND` | Enables low-overhead sound effects. |
+
+## Troubleshooting
+
+### The board says game data is missing
+
+Check that the SD card is FAT32, that the folder is named `wolf3d`, and that all
+required files use the same extension as the firmware you built.
+
+### Upload fails
+
+Try a known data-capable USB cable, hold the board's boot button during the
+connection phase if needed, and pass `--upload-port` with the correct serial
+port.
+
+### The game runs but has no sound
+
+Confirm that your CYD variant exposes the GPIO 26 DAC audio path and that
+`CYD_WOLF_BASIC_SOUND` is enabled.
+
+### The face display does not update
+
+Confirm that the S2 Mini is flashed with the `lolin_s2_mini` environment and
+that CYD GPIO 1 / P1 TX is connected to S2 Mini GPIO 18 / RX. Both boards need a
+common ground.
+
+### Performance is poor
+
+The current renderer is tuned around the default flags in
+[platformio.ini](platformio.ini) and [include/board_config.h](include/board_config.h).
+Increasing wall texture resolution, sprite quality, or local status-bar art can
+quickly overrun the ESP32's RAM and CPU budget.
+
+## Repository Layout
+
+| Path | Contents |
+| --- | --- |
+| `src/wolf3d/` | ESP32/CYD platform layer for the game firmware. |
+| `src/s2_face/` | Optional S2 Mini face-display firmware. |
+| `src/main.cpp` | CYD diagnostic hardware tester. |
+| `include/` | Board configuration. |
+| `lib/Wolf4SDL/` | Modified Wolf4SDL engine source. |
+| `sdcard/` | Test media used by the diagnostic firmware. |
+| `tools/` | Utility scripts for generated test media. |
+
+## Privacy And Assets
+
+Do not commit local PlatformIO build directories, serial logs, personal helper
+scripts, or machine-specific launchers. The repository ignores the usual local
+build products, `scratch/`, and local PowerShell wrappers.
+
+Do not commit commercial Wolfenstein 3D data files, extracted sprites, extracted
+sound effects, or generated game caches.
+
+## License
+
+This repository contains modified Wolf4SDL and id Software source code. Original
+license files remain in [lib/Wolf4SDL/src](lib/Wolf4SDL/src):
+
+- [GPL license](lib/Wolf4SDL/src/license-gpl.txt)
+- [id Software license](lib/Wolf4SDL/src/license-id.txt)
+
+Wolfenstein 3D commercial assets are owned by their respective rights holders
+and are not distributed here.

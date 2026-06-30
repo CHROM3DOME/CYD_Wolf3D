@@ -3,7 +3,8 @@
 .platformio-core/
 .platformio-python/
 platformio_cli/
-.codex-pio-venv/
+*pio-venv/
+.venv/
 
 # Local wheel/runtime workarounds
 vendor/
@@ -23,3 +24,4 @@ Thumbs.db
 # Local serial/debug captures
 monitor-log.txt
 *.log
+scratch/
