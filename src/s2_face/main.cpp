@@ -88,17 +88,7 @@ void setup() {
   Serial1.setRxBufferSize(2048);
   Serial1.begin(460800, SERIAL_8N1, RX_PIN, TX_PIN);
 
-  // Initialize LEDC for soft backlight fading (GPIO 13)
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttach(BACKLIGHT_PIN, 5000, 8);
-  ledcWrite(BACKLIGHT_PIN, 0); // Start completely off
-#else
-  ledcSetup(0, 5000, 8);
-  ledcAttachPin(BACKLIGHT_PIN, 0);
-  ledcWrite(0, 0); // Start completely off
-#endif
-  currentBacklightBrightness = 0;
-
+  // Initialize TFT LCD
   tft.init();
   tft.setRotation(0);
   tft.setSwapBytes(false);
@@ -106,14 +96,6 @@ void setup() {
   // Force BGR color order (GC9A01 default)
   tft.writecommand(0x36); // MADCTL
   tft.writedata(0x08);    // Set BGR bit (0x08) to force BGR
-
-  // Startup RGB color test flash to verify TFT wiring
-  tft.fillScreen(TFT_RED);
-  delay(200);
-  tft.fillScreen(TFT_GREEN);
-  delay(200);
-  tft.fillScreen(TFT_BLUE);
-  delay(200);
 
   tft.fillScreen(TFT_BLACK);
 
@@ -134,16 +116,36 @@ void setup() {
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
   tft.drawCentreString("Waiting for CYD...", 120, 170, 2);
 
-  Serial.println("Lolin S2 Mini GC9A01 Face display B37 initialized.");
+  // Now initialize LEDC and shut off the backlight and LCD controller
+  // This overrides TFT_eSPI's default pin behavior
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(BACKLIGHT_PIN, 5000, 8);
+  ledcWrite(BACKLIGHT_PIN, 0); // Start completely off
+#else
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(BACKLIGHT_PIN, 0);
+  ledcWrite(0, 0); // Start completely off
+#endif
+  currentBacklightBrightness = 0;
+
+  // Put screen display off and sleep to ensure black panel
+  tft.writecommand(0x28); // Display off
+  tft.writecommand(0x10); // Sleep in
+
+  Serial.println("Lolin S2 Mini GC9A01 Face display B37 initialized (screen/backlight off).");
 }
 
 void loop() {
   uint32_t now = millis();
+  static bool displayIsAsleep = true;
 
   // If no new face frame has arrived for 4 seconds, fade the backlight off
   if (currentBacklightBrightness > 0 && (millis() - lastFrameTime > 4000)) {
     Serial.println("[S2] No face frames received for 4 seconds. Fading backlight off...");
     setBacklight(0);
+    tft.writecommand(0x28); // Display off
+    tft.writecommand(0x10); // Sleep in
+    displayIsAsleep = true;
   }
 
   // If we are mid-frame and no data arrives for 150ms, timeout and reset state
@@ -205,6 +207,14 @@ void loop() {
           if (pixelsReadBytes >= totalBytes) {
             Serial.printf("[S2] Received complete face frame: %dx%d (%d bytes)\n", faceWidth, faceHeight, totalBytes);
             
+            // Wake up display if it was asleep
+            if (displayIsAsleep) {
+              tft.writecommand(0x11); // Sleep out
+              delay(120);
+              tft.writecommand(0x29); // Display on
+              displayIsAsleep = false;
+            }
+
             // Reenable backlight when first frame arrives (with soft fade)
             setBacklight(255);
             lastFrameTime = millis(); // Refresh frame timestamp
