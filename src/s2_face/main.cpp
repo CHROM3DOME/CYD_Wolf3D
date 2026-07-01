@@ -2,6 +2,7 @@
 #include <TFT_eSPI.h>
 
 #include <esp_arduino_version.h>
+#include "driver/gpio.h"
 
 TFT_eSPI tft;
 
@@ -17,6 +18,14 @@ static uint32_t lastFrameTime = 0;
 void setBacklight(int target) {
   if (target == currentBacklightBrightness) return;
   
+  // Re-attach LEDC to ensure the pin is routed to the PWM hardware during the transition
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(BACKLIGHT_PIN, 5000, 8);
+#else
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(BACKLIGHT_PIN, 0);
+#endif
+
   int step = (target > currentBacklightBrightness) ? 5 : -5;
   while (currentBacklightBrightness != target) {
     currentBacklightBrightness += step;
@@ -29,6 +38,14 @@ void setBacklight(int target) {
     ledcWrite(0, currentBacklightBrightness);
 #endif
     delay(4); // 4ms * 51 steps = ~200ms fade transition
+  }
+
+  // Force absolute digital states to completely bypass LEDC conflicts at 0 and 255
+  if (target == 0 || target == 255) {
+    // Completely reset the GPIO matrix routing to detach LEDC peripheral
+    gpio_reset_pin((gpio_num_t)BACKLIGHT_PIN);
+    pinMode(BACKLIGHT_PIN, OUTPUT);
+    digitalWrite(BACKLIGHT_PIN, target == 0 ? LOW : HIGH);
   }
 }
 
@@ -139,9 +156,9 @@ void loop() {
   uint32_t now = millis();
   static bool displayIsAsleep = true;
 
-  // If no new face frame has arrived for 4 seconds, fade the backlight off
-  if (currentBacklightBrightness > 0 && (millis() - lastFrameTime > 4000)) {
-    Serial.println("[S2] No face frames received for 4 seconds. Fading backlight off...");
+  // If no new face frame has arrived for 5 seconds, fade the backlight off
+  if (currentBacklightBrightness > 0 && (millis() - lastFrameTime > 5000)) {
+    Serial.println("[S2] No face frames received for 5 seconds. Fading backlight off...");
     setBacklight(0);
     tft.writecommand(0x28); // Display off
     tft.writecommand(0x10); // Sleep in
