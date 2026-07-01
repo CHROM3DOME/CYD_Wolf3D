@@ -1,11 +1,36 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
+#include <esp_arduino_version.h>
+
 TFT_eSPI tft;
 
 // Serial RX pin on Lolin S2 Mini (connect to CYD GPIO 1 / P1 TX)
 #define RX_PIN 18
 #define TX_PIN 17
+
+#define BACKLIGHT_PIN 13
+
+static int currentBacklightBrightness = 0;
+static uint32_t lastFrameTime = 0;
+
+void setBacklight(int target) {
+  if (target == currentBacklightBrightness) return;
+  
+  int step = (target > currentBacklightBrightness) ? 5 : -5;
+  while (currentBacklightBrightness != target) {
+    currentBacklightBrightness += step;
+    if (step > 0 && currentBacklightBrightness > target) currentBacklightBrightness = target;
+    if (step < 0 && currentBacklightBrightness < target) currentBacklightBrightness = target;
+    
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(BACKLIGHT_PIN, currentBacklightBrightness);
+#else
+    ledcWrite(0, currentBacklightBrightness);
+#endif
+    delay(4); // 4ms * 51 steps = ~200ms fade transition
+  }
+}
 
 // Max buffer size: BJ face is typical 24x32 or 32x32. Let's support up to 64x64.
 #define MAX_FACE_WIDTH 64
@@ -63,9 +88,16 @@ void setup() {
   Serial1.setRxBufferSize(2048);
   Serial1.begin(460800, SERIAL_8N1, RX_PIN, TX_PIN);
 
-  // Turn on the backlight (GPIO 13) explicitly
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
+  // Initialize LEDC for soft backlight fading (GPIO 13)
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(BACKLIGHT_PIN, 5000, 8);
+  ledcWrite(BACKLIGHT_PIN, 0); // Start completely off
+#else
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(BACKLIGHT_PIN, 0);
+  ledcWrite(0, 0); // Start completely off
+#endif
+  currentBacklightBrightness = 0;
 
   tft.init();
   tft.setRotation(0);
@@ -87,11 +119,11 @@ void setup() {
 
   // Draw a sleek background ring to wow the user
   tft.drawCircle(120, 120, 118, TFT_DARKGREY);
-  tft.drawCircle(120, 120, 117, TFT_BLUE);
+  tft.drawCircle(120, 120, 117, TFT_LIGHTGREY);
 
   // Display visual build and diagnostic info on the screen
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawCentreString("S2 FACE B24", 120, 40, 2);
+  tft.drawCentreString("S2 FACE B37", 120, 40, 2);
   
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawCentreString("Pins:", 120, 70, 2);
@@ -102,11 +134,17 @@ void setup() {
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
   tft.drawCentreString("Waiting for CYD...", 120, 170, 2);
 
-  Serial.println("Lolin S2 Mini GC9A01 Face display B24 initialized.");
+  Serial.println("Lolin S2 Mini GC9A01 Face display B37 initialized.");
 }
 
 void loop() {
   uint32_t now = millis();
+
+  // If no new face frame has arrived for 4 seconds, fade the backlight off
+  if (currentBacklightBrightness > 0 && (millis() - lastFrameTime > 4000)) {
+    Serial.println("[S2] No face frames received for 4 seconds. Fading backlight off...");
+    setBacklight(0);
+  }
 
   // If we are mid-frame and no data arrives for 150ms, timeout and reset state
   if (parserState != STATE_WAIT_AA && (now - lastByteTime > 150)) {
@@ -166,13 +204,19 @@ void loop() {
           int totalBytes = faceWidth * faceHeight * 2;
           if (pixelsReadBytes >= totalBytes) {
             Serial.printf("[S2] Received complete face frame: %dx%d (%d bytes)\n", faceWidth, faceHeight, totalBytes);
-            uint16_t bgColor = pixelBuffer[0];
+            
+            // Reenable backlight when first frame arrives (with soft fade)
+            setBacklight(255);
+            lastFrameTime = millis(); // Refresh frame timestamp
+
+            // Extract background color dynamically (skipping the 1px beige outer border)
+            uint16_t bgColor = (faceWidth > 2 && faceHeight > 2) ? pixelBuffer[faceWidth * 2 + 2] : pixelBuffer[0];
             static uint16_t lastBgColor = 0;
             bool bgChanged = (bgColor != lastBgColor);
             if (!firstFrameReceived || bgChanged) {
               tft.fillScreen(bgColor);
               tft.drawCircle(120, 120, 118, TFT_DARKGREY);
-              tft.drawCircle(120, 120, 117, TFT_BLUE);
+              tft.drawCircle(120, 120, 117, TFT_LIGHTGREY);
               firstFrameReceived = true;
               lastBgColor = bgColor;
             }
