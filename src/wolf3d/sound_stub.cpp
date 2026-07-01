@@ -19,31 +19,40 @@ extern "C" void cyd_trace_sound(int sound, int usedPcm);
 namespace {
 constexpr int kPcmMaxSegments = 2;
 constexpr int kPcSoundBufferSize = 2048;
+constexpr int kMaxChannels = 2;
 bool toneReady = false;
 uint32_t toneStopMs = 0;
-word currentSound = 0;
 bool currentPcSound = false;
-const uint8_t *pinnedPcm[kPcmMaxSegments] = {};
-uint32_t pinnedPcmLen[kPcmMaxSegments] = {};
-int pinnedPage[kPcmMaxSegments] = {-1, -1};
-uint8_t pinnedSegmentCount = 0;
-uint32_t pinnedTotalLen = 0;
-int pinnedDigi = -1;
 byte pcSoundBuffer[kPcSoundBufferSize];
-uint8_t pendingVolume = 192;
-bool pendingPositionedVolume = false;
+
+struct ChannelState {
+  word currentSound = 0;
+  uint32_t toneStopMs = 0;
+  
+  const uint8_t *pinnedPcm[kPcmMaxSegments] = {};
+  uint32_t pinnedPcmLen[kPcmMaxSegments] = {};
+  int pinnedPage[kPcmMaxSegments] = {-1, -1};
+  uint8_t pinnedSegmentCount = 0;
+  uint32_t pinnedTotalLen = 0;
+  int pinnedDigi = -1;
+  
+  uint8_t pendingVolume = 192;
+  bool pendingPositionedVolume = false;
+};
+
+ChannelState s_chans[kMaxChannels];
 
 extern "C" void cyd_hw_tone_init(void);
 extern "C" void cyd_hw_tone(uint16_t frequency);
 extern "C" uint32_t cyd_hw_millis(void);
-extern "C" void cyd_hw_pcm_play(const uint8_t *data, uint32_t length);
-extern "C" void cyd_hw_pcm_play_segments(const uint8_t **segments, const uint32_t *lengths, uint8_t count);
-extern "C" bool cyd_hw_pcm_active(void);
-extern "C" void cyd_hw_pcm_stop(void);
+extern "C" void cyd_hw_pcm_play_channel(uint8_t channel, const uint8_t *data, uint32_t length);
+extern "C" void cyd_hw_pcm_play_segments_channel(uint8_t channel, const uint8_t **segments, const uint32_t *lengths, uint8_t count);
+extern "C" bool cyd_hw_pcm_active_channel(uint8_t channel);
+extern "C" void cyd_hw_pcm_stop_channel(uint8_t channel);
 extern "C" void cyd_hw_pc_speaker_play(const uint8_t *data, uint32_t length);
 extern "C" bool cyd_hw_pc_speaker_active(void);
 extern "C" void cyd_hw_pc_speaker_stop(void);
-extern "C" void cyd_hw_audio_volume(uint8_t volume);
+extern "C" void cyd_hw_audio_volume_channel(uint8_t channel, uint8_t volume);
 
 uint8_t volumeFromPosition(int left, int right) {
     if(left < 0) left = 0;
@@ -54,31 +63,35 @@ uint8_t volumeFromPosition(int left, int right) {
     // Wolf's positional values are attenuation-like: 0 is close/loud, 15 is far.
     // The CYD build is mono, so convert the stereo pan pair into one distance volume.
     const int attenuation = (left + right) / 2;
-    int volume = 56 + (15 - attenuation) * 9;
-    if(volume < 48) volume = 48;
+    
+    // Cost-effective linear distance attenuation fading all the way down to 0 at distance 15
+    int volume = (15 - attenuation) * 12.8; // 15 * 12.8 = 192 max volume
+    if(volume < 0) volume = 0;
     if(volume > 192) volume = 192;
     return (uint8_t)volume;
 }
 
-uint8_t consumePendingVolume() {
-    uint8_t volume = pendingPositionedVolume ? pendingVolume : 192;
-    pendingVolume = 192;
-    pendingPositionedVolume = false;
+uint8_t consumePendingVolume(uint8_t channel) {
+    ChannelState &ch = s_chans[channel];
+    uint8_t volume = ch.pendingPositionedVolume ? ch.pendingVolume : 192;
+    ch.pendingVolume = 192;
+    ch.pendingPositionedVolume = false;
     return volume;
 }
 
-void unpinCurrentPcm() {
-    for(uint8_t i = 0; i < pinnedSegmentCount; ++i)
+void unpinCurrentPcm(uint8_t channel) {
+    ChannelState &ch = s_chans[channel];
+    for(uint8_t i = 0; i < ch.pinnedSegmentCount; ++i)
     {
-        if(pinnedPage[i] >= 0)
-            PM_UnpinPage(pinnedPage[i]);
-        pinnedPage[i] = -1;
-        pinnedPcm[i] = nullptr;
-        pinnedPcmLen[i] = 0;
+        if(ch.pinnedPage[i] >= 0)
+            PM_UnpinPage(ch.pinnedPage[i]);
+        ch.pinnedPage[i] = -1;
+        ch.pinnedPcm[i] = nullptr;
+        ch.pinnedPcmLen[i] = 0;
     }
-    pinnedSegmentCount = 0;
-    pinnedTotalLen = 0;
-    pinnedDigi = -1;
+    ch.pinnedSegmentCount = 0;
+    ch.pinnedTotalLen = 0;
+    ch.pinnedDigi = -1;
 }
 
 void ensureToneReady() {
@@ -89,30 +102,46 @@ void ensureToneReady() {
 #endif
 }
 
+void stopChannel(uint8_t channel) {
+#if CYD_WOLF_BASIC_SOUND
+    cyd_hw_pcm_stop_channel(channel);
+    unpinCurrentPcm(channel);
+    s_chans[channel].currentSound = 0;
+    s_chans[channel].toneStopMs = 0;
+    if (channel < 8) {
+        channelSoundPos[channel].valid = 0;
+    }
+#endif
+}
+
 void stopTone() {
 #if CYD_WOLF_BASIC_SOUND
     if(!toneReady) return;
     cyd_hw_tone(0);
-    cyd_hw_pcm_stop();
     cyd_hw_pc_speaker_stop();
-    unpinCurrentPcm();
     currentPcSound = false;
     toneStopMs = 0;
-    currentSound = 0;
+    
+    // Stop all PCM channels and unpin their buffers
+    for (int c = 0; c < kMaxChannels; ++c) {
+        stopChannel(c);
+    }
 #endif
 }
 
 void playTone(word sound, uint16_t frequency, uint16_t durationMs) {
 #if CYD_WOLF_BASIC_SOUND
     ensureToneReady();
-    cyd_hw_pcm_stop();
+    // PC speaker sounds take over channel 0
+    stopChannel(0);
     cyd_hw_pc_speaker_stop();
-    unpinCurrentPcm();
     currentPcSound = false;
-    cyd_hw_audio_volume(consumePendingVolume());
+    
+    cyd_hw_audio_volume_channel(0, consumePendingVolume(0));
     cyd_hw_tone(frequency);
     toneStopMs = cyd_hw_millis() + durationMs;
-    currentSound = sound;
+    s_chans[0].currentSound = sound;
+    channelSoundPos[0].valid = 0;
 #else
     (void)sound;
     (void)frequency;
@@ -131,9 +160,8 @@ bool playPcSpeakerSound(soundnames sound) {
         return false;
 
     const int chunk = STARTPCSOUNDS + (int)sound;
-    cyd_hw_pcm_stop();
+    stopChannel(0);
     cyd_hw_pc_speaker_stop();
-    unpinCurrentPcm();
     currentPcSound = false;
 
     int32_t chunkSize = CA_ReadAudioChunk(chunk, pcSoundBuffer, kPcSoundBufferSize);
@@ -148,11 +176,12 @@ bool playPcSpeakerSound(soundnames sound) {
         return false;
 
     ensureToneReady();
-    cyd_hw_audio_volume(consumePendingVolume());
+    cyd_hw_audio_volume_channel(0, consumePendingVolume(0));
     cyd_hw_pc_speaker_play(pcSoundBuffer + ORIG_SOUNDCOMMON_SIZE, length);
-    currentSound = sound;
+    s_chans[0].currentSound = sound;
     currentPcSound = true;
     toneStopMs = 0;
+    channelSoundPos[0].valid = 0;
     return true;
 #else
     (void)sound;
@@ -217,10 +246,6 @@ uint8_t soundPriority(soundnames sound) {
     }
 }
 
-uint8_t currentPriority() {
-    return currentSound ? soundPriority((soundnames)currentSound) : 0;
-}
-
 int fallbackDigiForSound(soundnames sound) {
     switch(sound) {
         case CLOSEDOORSND:     return 2;
@@ -237,7 +262,7 @@ int fallbackDigiForSound(soundnames sound) {
     }
 }
 
-bool pinDigiForSound(soundnames sound) {
+bool pinDigiForSound(uint8_t channel, soundnames sound) {
 #if CYD_WOLF_BASIC_SOUND
     int digi = DigiMap[sound];
     if(digi < 0)
@@ -245,10 +270,11 @@ bool pinDigiForSound(soundnames sound) {
     if(digi < 0)
         return false;
 
-    if(pinnedDigi == digi && pinnedSegmentCount && pinnedTotalLen)
+    ChannelState &ch = s_chans[channel];
+    if(ch.pinnedDigi == digi && ch.pinnedSegmentCount && ch.pinnedTotalLen)
         return true;
 
-    unpinCurrentPcm();
+    unpinCurrentPcm(channel);
 
     word *soundInfoPage = (word *)(void *)PM_GetPage(ChunksInFile - 1);
     int numDigi = (int)PM_GetPageSize(ChunksInFile - 1) / 4;
@@ -278,7 +304,7 @@ bool pinDigiForSound(soundnames sound) {
     uint32_t firstPage = (uint32_t)(PMSoundStart + startPage);
     uint32_t remaining = declaredLen;
     uint32_t absPage = firstPage;
-    while(remaining > 0 && pinnedSegmentCount < kPcmMaxSegments)
+    while(remaining > 0 && ch.pinnedSegmentCount < kPcmMaxSegments)
     {
         uint32_t pageLen = PM_GetPageSize((int)absPage);
         if(pageLen == 0) break;
@@ -288,50 +314,50 @@ bool pinDigiForSound(soundnames sound) {
         {
             furi_log_print_format(2, "Wolf3D", "PCM page failed snd=%i digi=%i page=%u pcm=%p len=%u",
                                   (int)sound, digi, (unsigned)absPage, pcm, (unsigned)segLen);
-            unpinCurrentPcm();
+            unpinCurrentPcm(channel);
             return false;
         }
-        pinnedPcm[pinnedSegmentCount] = pcm;
-        pinnedPcmLen[pinnedSegmentCount] = segLen;
-        pinnedPage[pinnedSegmentCount] = (int)absPage;
-        pinnedSegmentCount++;
-        pinnedTotalLen += segLen;
+        ch.pinnedPcm[ch.pinnedSegmentCount] = pcm;
+        ch.pinnedPcmLen[ch.pinnedSegmentCount] = segLen;
+        ch.pinnedPage[ch.pinnedSegmentCount] = (int)absPage;
+        ch.pinnedSegmentCount++;
+        ch.pinnedTotalLen += segLen;
         remaining -= segLen;
         absPage++;
     }
 
-    pinnedDigi = digi;
+    ch.pinnedDigi = digi;
 #if CYD_WOLF_SOUND_TRACE
     furi_log_print_format(2, "Wolf3D", "PCM snd %i digi %i page %i abs %u len %u play %u seg %u lastPage %i%s",
                           (int)sound, digi, startPage, (unsigned)firstPage,
-                          (unsigned)declaredLen, (unsigned)pinnedTotalLen,
-                          (unsigned)pinnedSegmentCount, lastPage,
+                          (unsigned)declaredLen, (unsigned)ch.pinnedTotalLen,
+                          (unsigned)ch.pinnedSegmentCount, lastPage,
                           remaining ? " TRUNC" : "");
 #endif
-    return pinnedSegmentCount > 0;
+    return ch.pinnedSegmentCount > 0;
 #else
+    (void)channel;
     (void)sound;
     return false;
 #endif
 }
 
-bool playPinnedPcm(soundnames sound) {
+bool playPinnedPcm(uint8_t channel, soundnames sound) {
 #if CYD_WOLF_BASIC_SOUND
     ensureToneReady();
-    if(!pinDigiForSound(sound))
+    if(!pinDigiForSound(channel, sound))
         return false;
 
     cyd_hw_tone(0);
     cyd_hw_pc_speaker_stop();
     currentPcSound = false;
-    cyd_hw_audio_volume(consumePendingVolume());
-    cyd_hw_pcm_play_segments(pinnedPcm, pinnedPcmLen, pinnedSegmentCount);
-    toneStopMs = cyd_hw_millis() + (pinnedTotalLen / 7) + 20;
-    currentSound = sound;
+    
+    ChannelState &ch = s_chans[channel];
+    cyd_hw_audio_volume_channel(channel, consumePendingVolume(channel));
+    cyd_hw_pcm_play_segments_channel(channel, ch.pinnedPcm, ch.pinnedPcmLen, ch.pinnedSegmentCount);
+    ch.toneStopMs = cyd_hw_millis() + (ch.pinnedTotalLen / 7) + 20;
+    ch.currentSound = sound;
     return true;
-#else
-    (void)sound;
-    return false;
 #endif
 }
 }
@@ -350,34 +376,58 @@ void SD_Startup(void) { for (int i=0;i<LASTSOUND;++i) { DigiMap[i]=-1; DigiChann
 void SD_Shutdown(void) {}
 void SD_StopSound(void) { stopTone(); }
 void SD_WaitSoundDone(void) { stopTone(); }
-int SD_GetChannelForDigi(int) { return 0; }
+
+int SD_GetChannelForDigi(int which) {
+    if (which >= 0 && which < LASTSOUND) {
+        if (which == ATKPISTOLSND || which == ATKMACHINEGUNSND || which == ATKGATLINGSND || which == SHOOTSND || which == GETKEYSND || which == GETAMMOSND || which == GETMACHINESND || which == GETGATLINGSND || which == BONUS1SND || which == BONUS2SND || which == BONUS3SND || which == BONUS4SND || which == BONUS1UPSND || which == HEALTH1SND || which == HEALTH2SND || which == PLAYERDEATHSND) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 void SD_PositionSound(int left, int right) {
-    pendingVolume = volumeFromPosition(left, right);
-    pendingPositionedVolume = true;
+    s_chans[0].pendingVolume = volumeFromPosition(left, right);
+    s_chans[0].pendingPositionedVolume = true;
+    s_chans[1].pendingVolume = volumeFromPosition(left, right);
+    s_chans[1].pendingPositionedVolume = true;
 }
-void SD_SetPosition(int, int left, int right) {
-    pendingVolume = volumeFromPosition(left, right);
-    pendingPositionedVolume = true;
-    if(currentSound)
-        cyd_hw_audio_volume(pendingVolume);
+
+void SD_SetPosition(int channel, int left, int right) {
+    if (channel < 0 || channel >= kMaxChannels) return;
+    s_chans[channel].pendingVolume = volumeFromPosition(left, right);
+    s_chans[channel].pendingPositionedVolume = true;
+    if(s_chans[channel].currentSound)
+        cyd_hw_audio_volume_channel(channel, s_chans[channel].pendingVolume);
 }
+
 void SD_SetPosition(int left, int right) {
     SD_SetPosition(0, left, right);
 }
+
 void SD_PrepareSound(int) {}
-int SD_PlayDigitized(word which, int, int) { return SD_PlaySound((soundnames)which) ? 1 : 0; }
+int SD_PlayDigitized(word which, int, int) { return (int)SD_PlaySound((soundnames)which); }
 void SD_StopDigitized(void) { stopTone(); }
 boolean SD_PlaySound(soundnames sound) {
 #if CYD_WOLF_BASIC_SOUND
     const uint32_t now = cyd_hw_millis();
     bool cydUsedPcm = false;
+    
     if(toneStopMs && now >= toneStopMs)
         stopTone();
 
-    if(currentSound && soundPriority(sound) < currentPriority())
+    for (int c = 0; c < kMaxChannels; ++c) {
+        if (s_chans[c].toneStopMs && now >= s_chans[c].toneStopMs) {
+            stopChannel(c);
+        }
+    }
+
+    int ch = SD_GetChannelForDigi(sound);
+
+    if(s_chans[ch].currentSound && soundPriority(sound) < soundPriority((soundnames)s_chans[ch].currentSound))
     {
         cyd_trace_sound((int)sound, 0);
-        return true;
+        return false;
     }
 
     switch(sound) {
@@ -415,7 +465,7 @@ boolean SD_PlaySound(soundnames sound) {
         case LEVELDONESND:
         case SLURPIESND:
         case YEAHSND:
-            if(playPinnedPcm(sound)) { cydUsedPcm = true; break; }
+            if(playPinnedPcm(ch, sound)) { cydUsedPcm = true; break; }
             if(sound == OPENDOORSND) playTone(sound, 220, 90);
             else if(sound == CLOSEDOORSND) playTone(sound, 165, 90);
             else if(sound == ATKMACHINEGUNSND || sound == ATKGATLINGSND) playTone(sound, 1350, 35);
@@ -456,7 +506,7 @@ boolean SD_PlaySound(soundnames sound) {
             return false;
     }
     cyd_trace_sound((int)sound, cydUsedPcm ? 1 : 0);
-    return true;
+    return (boolean)(cydUsedPcm ? (ch + 1) : 1);
 #else
     (void)sound;
     return false;
@@ -464,25 +514,43 @@ boolean SD_PlaySound(soundnames sound) {
 }
 word SD_SoundPlaying(void) {
 #if CYD_WOLF_BASIC_SOUND
+    word activeSound = 0;
+    
     if(currentPcSound)
     {
         if(cyd_hw_pc_speaker_active())
-            return currentSound;
-        currentPcSound = false;
-        currentSound = 0;
-        toneStopMs = 0;
+            activeSound = s_chans[0].currentSound;
+        else {
+            currentPcSound = false;
+            s_chans[0].currentSound = 0;
+            toneStopMs = 0;
+            channelSoundPos[0].valid = 0;
+        }
     }
-    if(currentSound && cyd_hw_pcm_active())
-        return currentSound;
-    if(pinnedSegmentCount)
-    {
-        unpinCurrentPcm();
-        currentSound = 0;
-        toneStopMs = 0;
+    
+    for (int c = 0; c < kMaxChannels; ++c) {
+        if (s_chans[c].currentSound) {
+            if (cyd_hw_pcm_active_channel(c)) {
+                activeSound = s_chans[c].currentSound;
+            } else {
+                unpinCurrentPcm(c);
+                s_chans[c].currentSound = 0;
+                s_chans[c].toneStopMs = 0;
+                if (c < 8) {
+                    channelSoundPos[c].valid = 0;
+                }
+            }
+        }
+        if (s_chans[c].toneStopMs && cyd_hw_millis() >= s_chans[c].toneStopMs) {
+            stopChannel(c);
+        }
     }
-    if(toneStopMs && cyd_hw_millis() >= toneStopMs)
+    
+    if (toneStopMs && cyd_hw_millis() >= toneStopMs) {
         stopTone();
-    return currentSound;
+    }
+    
+    return activeSound;
 #else
     return 0;
 #endif
