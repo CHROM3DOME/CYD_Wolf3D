@@ -1,5 +1,7 @@
 # ESP32-CYD Wolf3D
 
+<img width="1637" height="1228" alt="20260629_202003" src="https://github.com/user-attachments/assets/fd0db018-00da-44e9-90ba-794d41752925" />
+
 Wolfenstein 3D running on the ESP32 Cheap Yellow Display, also sold as the
 ESP32-2432S028R style board.
 
