@@ -85,7 +85,7 @@
 #define CYD_WOLF_SCREEN_FLASHES 1
 
 // S2 Face Serial connection (TX=1 on programming port P1, RX=3)
-#define CYD_S2_FACE_ENABLE 0
+#define CYD_S2_FACE_ENABLE 1
 #define CYD_S2_FACE_DOWNSAMPLE 1
 #define CYD_S2_FACE_LATCH_SURFACES 0
 #define CYD_S2_FACE_TX_PIN 1
