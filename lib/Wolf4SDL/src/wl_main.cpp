@@ -12,6 +12,7 @@
 
 #ifdef WOLF3D_CYD_PORT
 extern "C" void cyd_wall_cache_preload(void);
+extern "C" void CydFreeWallCache(void);
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 #ifndef CYD_WOLF_VIEW_SIZE
 #define CYD_WOLF_VIEW_SIZE 20
@@ -1717,6 +1718,14 @@ if (!param_demotest)
             PlayDemo (LastDemo);
             #endif
 
+#ifdef WOLF3D_CYD_PORT
+            extern void CA_ClearSoundCache(void);
+            extern void PM_ResetCachePages(void);
+            CA_ClearSoundCache();
+            CydFreeWallCache();
+            PM_ResetCachePages();
+#endif
+
             if (playstate == ex_abort)
                 break;
             VW_FadeOut();
@@ -1739,6 +1748,13 @@ if (!param_demotest)
         if (startgame || loadedgame)
         {
             GameLoop ();
+#ifdef WOLF3D_CYD_PORT
+            extern void CA_ClearSoundCache(void);
+            extern void PM_ResetCachePages(void);
+            CA_ClearSoundCache();
+            CydFreeWallCache();
+            PM_ResetCachePages();
+#endif
             if(!param_nowait)
             {
                 VW_FadeOut();
