@@ -89,6 +89,10 @@ bool readTouchPoint(int16_t &screenX, int16_t &screenY) {
 
   digitalWrite(TOUCH_CS, HIGH);
 
+  if (rawX < 100 || rawX > 4000 || rawY < 100 || rawY > 4000) {
+    return false;
+  }
+
 #if TOUCH_SWAP_XY
   uint16_t swapped = rawX;
   rawX = rawY;

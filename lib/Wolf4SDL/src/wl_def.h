@@ -1145,9 +1145,9 @@ int DebugKeys (void);
 // math tables
 //
 extern  short *pixelangle;
-extern  int32_t finetangent[FINEANGLES/4];
-extern  fixed sintable[];
-extern  fixed *costable;
+extern  const int32_t finetangent[FINEANGLES/4];
+extern  const fixed sintable[];
+extern  const fixed *costable;
 extern  int *wallheight;
 extern  word horizwall[],vertwall[];
 extern  int32_t    lasttimecount;

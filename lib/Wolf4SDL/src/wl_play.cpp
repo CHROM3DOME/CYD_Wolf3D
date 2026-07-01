@@ -1,4 +1,4 @@
-﻿// WL_PLAY.C
+// WL_PLAY.C
 
 #include "wl_def.h"
 
@@ -856,7 +856,13 @@ void InitActorList (void)
 void GetNewActor (void)
 {
     if (!objfreelist)
-        Quit ("GetNewActor: No free spots in objlist!");
+    {
+        static objtype dummyobj;
+        memset(&dummyobj, 0, sizeof(dummyobj));
+        newobj = &dummyobj;
+        printf("GetNewActor: No free spots in objlist (gracefully ignored)!\n");
+        return;
+    }
 
     newobj = objfreelist;
     objfreelist = newobj->prev;

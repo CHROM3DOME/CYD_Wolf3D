@@ -1,4 +1,4 @@
-﻿// WL_MAIN.C
+// WL_MAIN.C
 
 #ifdef _WIN32
     #include <io.h>
@@ -12,11 +12,27 @@
 
 #ifdef WOLF3D_CYD_PORT
 extern "C" void cyd_wall_cache_preload(void);
+extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 #ifndef CYD_WOLF_VIEW_SIZE
 #define CYD_WOLF_VIEW_SIZE 20
 #endif
 #ifndef CYD_WOLF_SKIP_BOOT_SCREENS
 #define CYD_WOLF_SKIP_BOOT_SCREENS 1
+#endif
+#ifndef CYD_WOLF_DEMO_MODE
+#define CYD_WOLF_DEMO_MODE 0
+#endif
+#ifndef CYD_WOLF_DEMO_NUMBER
+#define CYD_WOLF_DEMO_NUMBER 0
+#endif
+#ifndef CYD_WOLF_DEMO_CYCLE
+#define CYD_WOLF_DEMO_CYCLE 0
+#endif
+#ifndef CYD_WOLF_MAXVISABLE
+#define CYD_WOLF_MAXVISABLE 250
+#endif
+#ifndef CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS
+#define CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS 0
 #endif
 #endif
 
@@ -762,35 +778,6 @@ const float radtoint = (float)(FINEANGLES/2/PI);
 
 void BuildTables (void)
 {
-    //
-    // calculate fine tangents
-    //
-
-    int i;
-    for(i=0;i<FINEANGLES/8;i++)
-    {
-        double tang=tan((i+0.5)/radtoint);
-        finetangent[i]=(int32_t)(tang*GLOBAL1);
-        finetangent[FINEANGLES/4-1-i]=(int32_t)((1/tang)*GLOBAL1);
-    }
-
-    //
-    // costable overlays sintable with a quarter phase shift
-    // ANGLES is assumed to be divisable by four
-    //
-
-    float angle=0;
-    float anglestep=(float)(PI/2/ANGLEQUAD);
-    for(i=0; i<ANGLEQUAD; i++)
-    {
-        fixed value=(int32_t)(GLOBAL1*sin(angle));
-        sintable[i]=sintable[i+ANGLES]=sintable[ANGLES/2-i]=value;
-        sintable[ANGLES-i]=sintable[ANGLES/2+i]=-value;
-        angle+=anglestep;
-    }
-    sintable[ANGLEQUAD] = 65536;
-    sintable[3*ANGLEQUAD] = -65536;
-
 #if defined(USE_STARSKY) || defined(USE_RAIN) || defined(USE_SNOW)
     Init3DPoints();
 #endif
@@ -1608,14 +1595,26 @@ void Quit (const char *errorStr, ...)
 
 static void DemoLoop()
 {
-#ifdef WOLF3D_CYD_PORT
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_DEMO_MODE
     param_nowait = true;
+    int demoNumber = CYD_WOLF_DEMO_NUMBER;
     while (1)
     {
-        NewGame(param_difficulty, 0);
-        gamestate.episode = 0;
-        gamestate.mapon = 0;
-        GameLoop();
+#ifndef SPEARDEMO
+        const int demoIndex = demoNumber % 4;
+#else
+        const int demoIndex = 0;
+#endif
+        snprintf(str, sizeof(str), "Demo %i", demoIndex);
+        CYD_STATUS(str);
+        furi_log_print_format(2, "Wolf3D",
+            "CYD demo mode demo=%i maxstats=%i reserve=%i maxactors=%i maxvis=%i",
+            demoIndex, MAXSTATS, CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS, MAXACTORS,
+            CYD_WOLF_MAXVISABLE);
+        PlayDemo(demoIndex);
+#if CYD_WOLF_DEMO_CYCLE
+        ++demoNumber;
+#endif
     }
 #else
     int LastDemo = 0;

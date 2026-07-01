@@ -28,7 +28,7 @@ public:
     };
 
 private:
-    static constexpr int CAP = 256;
+    static constexpr int CAP = 32;
     value_type data[CAP];
     bool       used[CAP];
     int        max_idx;

@@ -1151,6 +1151,82 @@ int32_t CA_ReadGrChunkExpanded (int chunk, byte *dest, int32_t destSize)
 
 //==========================================================================
 
+#ifdef WOLF3D_CYD_PORT
+struct HuffmanStream
+{
+    int handle;
+    byte buffer[512];
+    int bufPos;
+    int bufSize;
+
+    HuffmanStream(int h) : handle(h), bufPos(0), bufSize(0) {}
+
+    byte readByte()
+    {
+        if (bufPos >= bufSize)
+        {
+            bufSize = read(handle, buffer, sizeof(buffer));
+            bufPos = 0;
+            if (bufSize <= 0)
+                return 0; // EOF or error
+        }
+        return buffer[bufPos++];
+    }
+};
+
+static void CAL_HuffExpandPlanarToLinearStream(int handle, byte *dest, int32_t length, huffnode *hufftable)
+{
+    huffnode *headptr, *huffptr;
+
+    if(!dest)
+    {
+        Quit("dest is null!");
+        return;
+    }
+
+    headptr = hufftable+254;        // head node is always node 254
+
+    HuffmanStream stream(handle);
+
+    byte val = stream.readByte();
+    byte mask = 1;
+    word nodeval;
+    huffptr = headptr;
+    int32_t idx = 0;
+    while(1)
+    {
+        if(!(val & mask))
+            nodeval = huffptr->bit0;
+        else
+            nodeval = huffptr->bit1;
+        if(mask==0x80)
+        {
+            val = stream.readByte();
+            mask = 1;
+        }
+        else mask <<= 1;
+
+        if(nodeval<256)
+        {
+            int32_t plane = idx / 16000;
+            int32_t plane_idx = idx % 16000;
+            int32_t y = plane_idx / 80;
+            int32_t x_div_4 = plane_idx % 80;
+            if (y * 320 + x_div_4 * 4 + plane < 64000)
+                dest[y * 320 + x_div_4 * 4 + plane] = (byte) nodeval;
+
+            idx++;
+            huffptr = headptr;
+            if(idx>=length) break;
+        }
+        else
+        {
+            huffptr = hufftable + (nodeval - 256);
+        }
+    }
+}
+#endif
+
 /*
 ======================
 =
@@ -1163,6 +1239,33 @@ int32_t CA_ReadGrChunkExpanded (int chunk, byte *dest, int32_t destSize)
 
 void CA_CacheScreen (int chunk)
 {
+#ifdef WOLF3D_CYD_PORT
+    int32_t    pos,compressed,expanded;
+    int             next;
+    byte *vbuf;
+
+    pos = GRFILEPOS(chunk);
+    next = chunk +1;
+    while (GRFILEPOS(next) == -1)           // skip past any sparse tiles
+        next++;
+    compressed = GRFILEPOS(next)-pos;
+
+    lseek(grhandle,pos,SEEK_SET);
+
+    int32_t expanded_header = 0;
+    if (read(grhandle, &expanded_header, 4) != 4)
+    {
+        return;
+    }
+    expanded = expanded_header;
+
+    vbuf = VL_LockSurface(curSurface);
+    if(vbuf != NULL)
+    {
+        CAL_HuffExpandPlanarToLinearStream(grhandle, vbuf, expanded, grhuffman);
+        VL_UnlockSurface(curSurface);
+    }
+#else
     int32_t    pos,compressed,expanded;
     memptr  bigbufferseg;
     int32_t    *source;
@@ -1182,7 +1285,14 @@ void CA_CacheScreen (int chunk)
 
     lseek(grhandle,pos,SEEK_SET);
 
+    printf("CA_CacheScreen: chunk %d, compressed %d, free heap %u, largest block %u\n",
+           chunk, (int)compressed, (unsigned)esp_get_free_heap_size(),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     bigbufferseg=malloc(compressed);
+    if (!bigbufferseg)
+    {
+        printf("CA_CacheScreen: OOM allocating bigbufferseg!\n");
+    }
     CHECKMALLOCRESULT(bigbufferseg);
     if (read(grhandle,bigbufferseg,compressed) < 0)
     {
@@ -1218,6 +1328,7 @@ void CA_CacheScreen (int chunk)
     }
     free(pic);
     free(bigbufferseg);
+#endif
 }
 
 //==========================================================================

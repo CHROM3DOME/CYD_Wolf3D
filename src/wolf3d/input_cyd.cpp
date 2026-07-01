@@ -107,6 +107,7 @@ extern "C" void cyd_native_set_key(int32_t key, bool down) {
   Keyboard[key] = down ? true : false;
   if (down) {
     LastScan = key;
+    printf("cyd_native_set_key: key %d down, LastScan=%d\n", (int)key, (int)LastScan);
     const char ascii = asciiForKey(key);
     if (ascii) LastASCII = ascii;
     if (key == SDLK_PAUSE) Paused = true;
@@ -171,6 +172,11 @@ void cyd_poll_mcp23017_buttons() {
   
   // Active-low buttons: invert bits so 1 = pressed, 0 = released
   uint16_t pins = ~(gpioa | (gpiob << 8));
+  static uint32_t lastPrintTime = 0;
+  if (millis() - lastPrintTime > 1000 && pins != 0) {
+    printf("I2C read: A=0x%02X B=0x%02X, pins=0x%04X\n", gpioa, gpiob, pins);
+    lastPrintTime = millis();
+  }
   
   // Map Port A pins
   cyd_native_set_key(SDLK_UP,     (pins & (1 << 0)) != 0);   // PA0 -> Up
@@ -189,7 +195,8 @@ void cyd_poll_mcp23017_buttons() {
   cyd_native_set_key(SDLK_ESCAPE, (pins & (1 << 11)) != 0);  // PB3 -> Start (Escape)
   cyd_native_set_key(SDLK_LALT,   (pins & (1 << 12)) != 0);  // PB4 -> Upper (Strafe)
   cyd_native_set_key(SDLK_LSHIFT, (pins & (1 << 13)) != 0);  // PB5 -> Lower (Run)
-  cyd_native_set_key(SDLK_SPACE,  (pins & (1 << 14)) != 0);  // PB6 -> Right (Open/Use)
+  // Temporarily comment out PB6 to isolate stuck input
+  // cyd_native_set_key(SDLK_SPACE,  (pins & (1 << 14)) != 0);  // PB6 -> Right (Open/Use)
   cyd_native_set_key(SDLK_LCTRL,  (pins & (1 << 15)) != 0);  // PB7 -> Left (Fire)
 }
 }

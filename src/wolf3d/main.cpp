@@ -19,6 +19,14 @@
 #define CYD_WOLF_USE_DMA_PRESENT 0
 #endif
 
+#ifndef CYD_WOLF_DEMO_MODE
+#define CYD_WOLF_DEMO_MODE 0
+#endif
+
+#ifndef CYD_WOLF_DEMO_NUMBER
+#define CYD_WOLF_DEMO_NUMBER 0
+#endif
+
 #ifndef CYD_WOLF_DMA_STRIPE_ROWS
 #define CYD_WOLF_DMA_STRIPE_ROWS 8
 #endif
@@ -303,11 +311,11 @@ extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height
 
 void setup() {
   // Release Bluetooth controller memory to reclaim SRAM
-  esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+  // esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   
   // Power down WiFi radio
-  esp_wifi_stop();
-  esp_wifi_deinit();
+  // esp_wifi_stop();
+  // esp_wifi_deinit();
 
   Serial.setTxBufferSize(2048);
   Serial.begin(460800);
@@ -352,11 +360,17 @@ void setup() {
   Serial.printf("Wolf3D starting with .%s data, free heap: %u bytes\n",
                 detectedExtension.c_str(), ESP.getFreeHeap());
   char arg0[] = "wolf3d";
-  char arg1[] = "--tedlevel";
-  char arg2[] = "0";
-  char arg3[] = "--baby";
-  char *argv[] = {arg0, arg1, arg2, arg3, nullptr};
-  wolf_main(4, argv);
+#if CYD_WOLF_DEMO_MODE
+  char arg1[] = "--demotest";
+  char arg2[] = "--nowait";
+  char *argv[] = {arg0, arg1, arg2, nullptr};
+  Serial.printf("CYD demo mode enabled: demo %d, face stream off, free heap: %u bytes\n",
+                CYD_WOLF_DEMO_NUMBER, ESP.getFreeHeap());
+  wolf_main(3, argv);
+#else
+  char *argv[] = {arg0, nullptr};
+  wolf_main(1, argv);
+#endif
   fatalScreen("Wolf3D exited");
 }
 

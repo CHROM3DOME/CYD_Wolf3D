@@ -14,6 +14,19 @@
 statobj_t       statobjlist[MAXSTATS];
 statobj_t       *laststatobj;
 
+#ifdef WOLF3D_CYD_PORT
+#ifndef CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS
+#define CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS 0
+#endif
+extern "C" void furi_log_print_format(int, const char *, const char *, ...);
+extern "C" void cyd_trace_static_spawn(int used, int capacity, int category, int type, int shapenum);
+extern "C" void cyd_trace_static_drop(int used, int capacity, int type, int shapenum);
+
+namespace {
+int cydDroppedDecorStatics = 0;
+}
+#endif
+
 
 struct
 {
@@ -120,6 +133,54 @@ struct
     {-1}                                    // terminator
 };
 
+#ifdef WOLF3D_CYD_PORT
+namespace {
+int CydStaticTraceCategory(wl_stat_t type)
+{
+    if (type == block)
+        return 2;
+    if (type == none)
+        return 1;
+    return 3;
+}
+
+bool CydShouldDropDecorStatic(wl_stat_t type)
+{
+#if CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS > 0
+    if (type != none)
+        return false;
+    const int used = (int)(laststatobj - statobjlist);
+    return used >= MAXSTATS - CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS;
+#else
+    (void)type;
+    return false;
+#endif
+}
+
+void CydTraceStaticDrop(int tilex, int tiley, int type)
+{
+    ++cydDroppedDecorStatics;
+    const int used = (int)(laststatobj - statobjlist);
+    cyd_trace_static_drop(used, MAXSTATS, type, statinfo[type].picnum);
+    if ((cydDroppedDecorStatics & 0x0f) == 1)
+    {
+        furi_log_print_format(2, "Wolf3D",
+            "Static decor trim used=%i/%i dropped=%i tile=%i,%i type=%i shape=%i reserve=%i",
+            used, MAXSTATS, cydDroppedDecorStatics, tilex, tiley, type,
+            statinfo[type].picnum, CYD_WOLF_STATIC_DECOR_RESERVE_SLOTS);
+    }
+}
+
+void CydTraceStaticOverflow(int tilex, int tiley, int type)
+{
+    furi_log_print_format(2, "Wolf3D",
+        "Too many static objects used=%i/%i droppedDecor=%i tile=%i,%i type=%i statType=%i shape=%i",
+        (int)(laststatobj - statobjlist), MAXSTATS, cydDroppedDecorStatics,
+        tilex, tiley, type, (int)statinfo[type].type, statinfo[type].picnum);
+}
+}
+#endif
+
 /*
 ===============
 =
@@ -131,6 +192,9 @@ struct
 void InitStaticList (void)
 {
     laststatobj = &statobjlist[0];
+#ifdef WOLF3D_CYD_PORT
+    cydDroppedDecorStatics = 0;
+#endif
 }
 
 
@@ -145,12 +209,27 @@ void InitStaticList (void)
 
 void SpawnStatic (int tilex, int tiley, int type)
 {
+    const wl_stat_t statType = statinfo[type].type;
+
+#ifdef WOLF3D_CYD_PORT
+    if (CydShouldDropDecorStatic(statType))
+    {
+        CydTraceStaticDrop(tilex, tiley, type);
+        return;
+    }
+    if (laststatobj >= &statobjlist[MAXSTATS])
+    {
+        CydTraceStaticOverflow(tilex, tiley, type);
+        return;
+    }
+#endif
+
     laststatobj->shapenum = statinfo[type].picnum;
     laststatobj->tilex = tilex;
     laststatobj->tiley = tiley;
     laststatobj->visspot = &spotvis[tilex][tiley];
 
-    switch (statinfo[type].type)
+    switch (statType)
     {
         case block:
             actorat[tilex][tiley] = (objtype *) 64;          // consider it a blocking tile
@@ -190,8 +269,13 @@ void SpawnStatic (int tilex, int tiley, int type)
 
     laststatobj++;
 
+#ifdef WOLF3D_CYD_PORT
+    cyd_trace_static_spawn((int)(laststatobj - statobjlist), MAXSTATS,
+        CydStaticTraceCategory(statType), type, statinfo[type].picnum);
+#else
     if (laststatobj == &statobjlist[MAXSTATS])
         Quit ("Too many static objects!\n");
+#endif
 }
 
 

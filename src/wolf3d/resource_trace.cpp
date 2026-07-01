@@ -27,11 +27,13 @@ constexpr int kPmTopCount = 8;
 constexpr int kGrTopCount = 8;
 constexpr int kSpriteTopCount = 10;
 constexpr int kSoundTopCount = 8;
+constexpr int kStaticTopCount = 8;
 
 TopEntry pmTop[kPmTopCount];
 TopEntry grTop[kGrTopCount];
 TopEntry spriteTop[kSpriteTopCount];
 TopEntry soundTop[kSoundTopCount];
+TopEntry staticTop[kStaticTopCount];
 
 uint32_t lastLogMs = 0;
 uint32_t frames = 0;
@@ -56,6 +58,14 @@ uint32_t spriteTallest = 0;
 uint32_t soundRequests = 0;
 uint32_t soundPcm = 0;
 
+uint32_t staticSpawns = 0;
+uint32_t staticDecor = 0;
+uint32_t staticBlock = 0;
+uint32_t staticBonus = 0;
+uint32_t staticDroppedDecor = 0;
+uint32_t staticPeakUsed = 0;
+uint32_t staticCapacity = 0;
+
 void resetTop(TopEntry *top, int count) {
   for(int i = 0; i < count; ++i) top[i] = TopEntry{};
 }
@@ -66,10 +76,13 @@ void resetAll() {
   grRequests = grExpands = grCompressedBytes = grExpandedBytes = 0;
   spriteTotal = spriteDecor = spriteBonus = spriteActor = spriteWeapon = spriteTallest = 0;
   soundRequests = soundPcm = 0;
+  staticSpawns = staticDecor = staticBlock = staticBonus = staticDroppedDecor = 0;
+  staticPeakUsed = staticCapacity = 0;
   resetTop(pmTop, kPmTopCount);
   resetTop(grTop, kGrTopCount);
   resetTop(spriteTop, kSpriteTopCount);
   resetTop(soundTop, kSoundTopCount);
+  resetTop(staticTop, kStaticTopCount);
 }
 
 void bumpTop(TopEntry *top, int count, int id, uint32_t bytes = 0, uint32_t extra = 0) {
@@ -167,6 +180,17 @@ void maybeLog() {
   printBest("sndTop", bestOf(soundTop, kSoundTopCount));
   Serial.println();
 
+  Serial.printf("TRACE stat spawn=%lu peak=%lu/%lu decor=%lu block=%lu bonus=%lu dropDecor=%lu",
+                static_cast<unsigned long>(staticSpawns),
+                static_cast<unsigned long>(staticPeakUsed),
+                static_cast<unsigned long>(staticCapacity),
+                static_cast<unsigned long>(staticDecor),
+                static_cast<unsigned long>(staticBlock),
+                static_cast<unsigned long>(staticBonus),
+                static_cast<unsigned long>(staticDroppedDecor));
+  printBest("statTop", bestOf(staticTop, kStaticTopCount));
+  Serial.println();
+
   lastLogMs = nowMs;
   resetAll();
 }
@@ -220,6 +244,26 @@ extern "C" void cyd_trace_sound(int sound, int usedPcm) {
   bumpTop(soundTop, kSoundTopCount, sound, 0, usedPcm ? 1 : 0);
 }
 
+extern "C" void cyd_trace_static_spawn(int used, int capacity, int category, int type, int shapenum) {
+  ++staticSpawns;
+  if(used > 0 && staticPeakUsed < static_cast<uint32_t>(used)) staticPeakUsed = used;
+  if(capacity > 0) staticCapacity = static_cast<uint32_t>(capacity);
+  switch(category) {
+    case CYD_TRACE_STATIC_DECOR: ++staticDecor; break;
+    case CYD_TRACE_STATIC_BLOCK: ++staticBlock; break;
+    case CYD_TRACE_STATIC_BONUS: ++staticBonus; break;
+    default: break;
+  }
+  bumpTop(staticTop, kStaticTopCount, shapenum, 0, static_cast<uint32_t>(type));
+}
+
+extern "C" void cyd_trace_static_drop(int used, int capacity, int type, int shapenum) {
+  ++staticDroppedDecor;
+  if(used > 0 && staticPeakUsed < static_cast<uint32_t>(used)) staticPeakUsed = used;
+  if(capacity > 0) staticCapacity = static_cast<uint32_t>(capacity);
+  bumpTop(staticTop, kStaticTopCount, shapenum, 0, static_cast<uint32_t>(type));
+}
+
 #else
 
 extern "C" void cyd_trace_frame(void) {}
@@ -229,5 +273,7 @@ extern "C" void cyd_trace_gr_request(int, int32_t) {}
 extern "C" void cyd_trace_gr_expand(int, int32_t) {}
 extern "C" void cyd_trace_sprite(int, int, unsigned) {}
 extern "C" void cyd_trace_sound(int, int) {}
+extern "C" void cyd_trace_static_spawn(int, int, int, int, int) {}
+extern "C" void cyd_trace_static_drop(int, int, int, int) {}
 
 #endif

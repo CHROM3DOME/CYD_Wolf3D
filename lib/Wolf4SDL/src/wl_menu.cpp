@@ -239,121 +239,9 @@ static byte *ExtScanNames[] =   // Names corresponding to ExtScanCodes
                                         };*/
 
 #else
-static WolfMap<ScanCode, const char *> ScanNames;
 void US_SetScanNames()
 {
-    ScanNames[0] = "None";
-    ScanNames[sc_Enter] = "Enter";
-    ScanNames[SDLK_UP] = "Up";
-    ScanNames[SDLK_DOWN] = "Down";
-    ScanNames[SDLK_RIGHT] = "Right";
-    ScanNames[SDLK_LEFT] = "Left";
-    ScanNames[SDLK_INSERT] = "Ins";
-    ScanNames[SDLK_HOME] = "Home";
-    ScanNames[SDLK_END] = "End";
-    ScanNames[SDLK_PAGEUP] = "PgUp";
-    ScanNames[SDLK_PAGEDOWN] = "PgDn";
-    ScanNames[SDLK_F1] = "F1";
-    ScanNames[SDLK_F2] = "F2";
-    ScanNames[SDLK_F3] = "F3";
-    ScanNames[SDLK_F4] = "F4";
-    ScanNames[SDLK_F5] = "F5";
-    ScanNames[SDLK_F6] = "F6";
-    ScanNames[SDLK_F7] = "F7";
-    ScanNames[SDLK_F8] = "F8";
-    ScanNames[SDLK_F9] = "F9";
-    ScanNames[SDLK_F10] = "F10";
-    ScanNames[SDLK_F11] = "F11";
-    ScanNames[SDLK_F12] = "F12";
-    ScanNames[SDLK_F13] = "F13";
-    ScanNames[SDLK_F14] = "F14";
-    ScanNames[SDLK_F15] = "F15";
-    ScanNames[SDLK_F16] = "F16";
-    ScanNames[SDLK_F17] = "F17";
-    ScanNames[SDLK_F18] = "F18";
-    ScanNames[SDLK_F19] = "F19";
-    ScanNames[SDLK_NUMLOCKCLEAR] = "NumLk";
-    ScanNames[SDLK_CAPSLOCK] = "CapsLk";
-    ScanNames[SDLK_SCROLLLOCK] = "ScrlLk";
-    ScanNames[SDLK_RSHIFT] = "RShft";
-    ScanNames[SDLK_LSHIFT] = "Shift";
-    ScanNames[SDLK_RCTRL] = "RCtrl";
-    ScanNames[SDLK_LCTRL] = "LCtrl";
-    ScanNames[SDLK_RALT] = "RAlt";
-    ScanNames[SDLK_LALT] = "Alt";
-    ScanNames[SDLK_RGUI] = "RMeta";
-    ScanNames[SDLK_LGUI] = "LMeta";
-    ScanNames[SDLK_PRINTSCREEN] = "PrtSc";
-    ScanNames[sc_BackSpace] = "BkSp";
-    ScanNames[sc_Tab] = "Tab";
-    ScanNames[sc_Return] = "Return";
-    ScanNames[SDLK_PAUSE] = "Pause";
-    ScanNames[sc_Escape] = "Esc";
-    ScanNames[sc_Space] = "Space";
-    ScanNames[SDLK_EXCLAIM] = "!";
-    ScanNames[SDLK_QUOTEDBL] = "\"";
-    ScanNames[SDLK_HASH] = "#";
-    ScanNames[SDLK_DOLLAR] = "$";
-    ScanNames[SDLK_QUESTION] = "?";
-    ScanNames[SDLK_AMPERSAND] = "&";
-    ScanNames[SDLK_QUOTE] = "'";
-    ScanNames[SDLK_LEFTPAREN] = "(";
-    ScanNames[SDLK_RIGHTPAREN] = ")";
-    ScanNames[SDLK_ASTERISK] = "*";
-    ScanNames[SDLK_PLUS] = "+";
-    ScanNames[SDLK_COMMA] = ",";
-    ScanNames[SDLK_MINUS] = "-";
-    ScanNames[SDLK_PERIOD] = ".";
-    ScanNames[SDLK_SLASH] = "/";
-    ScanNames[SDLK_0] = "0";
-    ScanNames[SDLK_1] = "1";
-    ScanNames[SDLK_2] = "2";
-    ScanNames[SDLK_3] = "3";
-    ScanNames[SDLK_4] = "4";
-    ScanNames[SDLK_5] = "5";
-    ScanNames[SDLK_6] = "6";
-    ScanNames[SDLK_7] = "7";
-    ScanNames[SDLK_8] = "8";
-    ScanNames[SDLK_9] = "9";
-    ScanNames[SDLK_COLON] = ":";
-    ScanNames[SDLK_SEMICOLON] = ";";
-    ScanNames[SDLK_LESS] = "<";
-    ScanNames[SDLK_EQUALS] = "=";
-    ScanNames[SDLK_GREATER] = ">";
-    ScanNames[SDLK_AT] = "@";
-    ScanNames[SDLK_a] = "A";
-    ScanNames[SDLK_b] = "B";
-    ScanNames[SDLK_c] = "C";
-    ScanNames[SDLK_d] = "D";
-    ScanNames[SDLK_e] = "E";
-    ScanNames[SDLK_f] = "F";
-    ScanNames[SDLK_g] = "G";
-    ScanNames[SDLK_h] = "H";
-    ScanNames[SDLK_i] = "I";
-    ScanNames[SDLK_j] = "J";
-    ScanNames[SDLK_k] = "K";
-    ScanNames[SDLK_l] = "L";
-    ScanNames[SDLK_m] = "M";
-    ScanNames[SDLK_n] = "N";
-    ScanNames[SDLK_o] = "O";
-    ScanNames[SDLK_p] = "P";
-    ScanNames[SDLK_q] = "Q";
-    ScanNames[SDLK_r] = "R";
-    ScanNames[SDLK_s] = "S";
-    ScanNames[SDLK_t] = "T";
-    ScanNames[SDLK_u] = "U";
-    ScanNames[SDLK_v] = "V";
-    ScanNames[SDLK_w] = "W";
-    ScanNames[SDLK_x] = "X";
-    ScanNames[SDLK_y] = "Y";
-    ScanNames[SDLK_z] = "Z";
-    ScanNames[SDLK_LEFTBRACKET] = "[";
-    ScanNames[SDLK_BACKSLASH] = "\\";
-    ScanNames[SDLK_RIGHTBRACKET] = "]";
-    ScanNames[KEYD_MWHEELUP] = "MWUP";
-    ScanNames[KEYD_MWHEELDOWN] = "MWDN";
 }
-
 #endif
 
 bool menuactive; // [FG] true if menu is active
@@ -4198,19 +4086,118 @@ FreeMusic (void)
 const char *
 IN_GetScanName (ScanCode scan)
 {
-/*    const char **p;
-    ScanCode *s;
-
-    for (s = ExtScanCodes, p = ExtScanNames; *s; p++, s++)
-        if (*s == scan)
-            return (*p);*/
-
-    auto it = ScanNames.find(scan);
-    if (it == ScanNames.end())
+    switch(scan)
     {
-        return "?";
+        case 0: return "None";
+        case sc_Enter: return "Enter";
+        case SDLK_UP: return "Up";
+        case SDLK_DOWN: return "Down";
+        case SDLK_RIGHT: return "Right";
+        case SDLK_LEFT: return "Left";
+        case SDLK_INSERT: return "Ins";
+        case SDLK_HOME: return "Home";
+        case SDLK_END: return "End";
+        case SDLK_PAGEUP: return "PgUp";
+        case SDLK_PAGEDOWN: return "PgDn";
+        case SDLK_F1: return "F1";
+        case SDLK_F2: return "F2";
+        case SDLK_F3: return "F3";
+        case SDLK_F4: return "F4";
+        case SDLK_F5: return "F5";
+        case SDLK_F6: return "F6";
+        case SDLK_F7: return "F7";
+        case SDLK_F8: return "F8";
+        case SDLK_F9: return "F9";
+        case SDLK_F10: return "F10";
+        case SDLK_F11: return "F11";
+        case SDLK_F12: return "F12";
+        case SDLK_F13: return "F13";
+        case SDLK_F14: return "F14";
+        case SDLK_F15: return "F15";
+        case SDLK_F16: return "F16";
+        case SDLK_F17: return "F17";
+        case SDLK_F18: return "F18";
+        case SDLK_F19: return "F19";
+        case SDLK_NUMLOCKCLEAR: return "NumLk";
+        case SDLK_CAPSLOCK: return "CapsLk";
+        case SDLK_SCROLLLOCK: return "ScrlLk";
+        case SDLK_RSHIFT: return "RShft";
+        case SDLK_LSHIFT: return "Shift";
+        case SDLK_RCTRL: return "RCtrl";
+        case SDLK_LCTRL: return "LCtrl";
+        case SDLK_RALT: return "RAlt";
+        case SDLK_LALT: return "Alt";
+        case SDLK_RGUI: return "RMeta";
+        case SDLK_LGUI: return "LMeta";
+        case SDLK_PRINTSCREEN: return "PrtSc";
+        case sc_BackSpace: return "BkSp";
+        case sc_Tab: return "Tab";
+        case SDLK_PAUSE: return "Pause";
+        case sc_Escape: return "Esc";
+        case sc_Space: return "Space";
+        case SDLK_EXCLAIM: return "!";
+        case SDLK_HASH: return "#";
+        case SDLK_DOLLAR: return "$";
+        case SDLK_QUESTION: return "?";
+        case SDLK_AMPERSAND: return "&";
+        case SDLK_QUOTE: return "'";
+        case SDLK_LEFTPAREN: return "(";
+        case SDLK_RIGHTPAREN: return ")";
+        case SDLK_ASTERISK: return "*";
+        case SDLK_PLUS: return "+";
+        case SDLK_COMMA: return ",";
+        case SDLK_MINUS: return "-";
+        case SDLK_PERIOD: return ".";
+        case SDLK_SLASH: return "/";
+        case SDLK_0: return "0";
+        case SDLK_1: return "1";
+        case SDLK_2: return "2";
+        case SDLK_3: return "3";
+        case SDLK_4: return "4";
+        case SDLK_5: return "5";
+        case SDLK_6: return "6";
+        case SDLK_7: return "7";
+        case SDLK_8: return "8";
+        case SDLK_9: return "9";
+        case SDLK_COLON: return ":";
+        case SDLK_SEMICOLON: return ";";
+        case SDLK_LESS: return "<";
+        case SDLK_EQUALS: return "=";
+        case SDLK_GREATER: return ">";
+        case SDLK_AT: return "@";
+        case SDLK_a: return "A";
+        case SDLK_b: return "B";
+        case SDLK_c: return "C";
+        case SDLK_d: return "D";
+        case SDLK_e: return "E";
+        case SDLK_f: return "F";
+        case SDLK_g: return "G";
+        case SDLK_h: return "H";
+        case SDLK_i: return "I";
+        case SDLK_j: return "J";
+        case SDLK_k: return "K";
+        case SDLK_l: return "L";
+        case SDLK_m: return "M";
+        case SDLK_n: return "N";
+        case SDLK_o: return "O";
+        case SDLK_p: return "P";
+        case SDLK_q: return "Q";
+        case SDLK_r: return "R";
+        case SDLK_s: return "S";
+        case SDLK_t: return "T";
+        case SDLK_u: return "U";
+        case SDLK_v: return "V";
+        case SDLK_w: return "W";
+        case SDLK_x: return "X";
+        case SDLK_y: return "Y";
+        case SDLK_z: return "Z";
+        case SDLK_LEFTBRACKET: return "[";
+        case SDLK_BACKSLASH: return "\\";
+        case SDLK_RIGHTBRACKET: return "]";
+        case KEYD_MWHEELUP: return "MWUP";
+        case KEYD_MWHEELDOWN: return "MWDN";
+        default: return "?";
     }
-    return it->second;
 }
 
 
