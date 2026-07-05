@@ -36,12 +36,9 @@ static bool CydSkipGrChunk(int chunk)
 {
     if (chunk == STARTFONT + 1)
         return true;
-#ifdef CONTROLS_LUMP_START
-    if (chunk >= CONTROLS_LUMP_START && chunk <= CONTROLS_LUMP_END)
-        return true;
-#endif
     return false;
 }
+static byte *cydMapCompBuffer = NULL;
 #endif
 
 #define THREEBYTEGRSTARTS
@@ -75,7 +72,7 @@ typedef PACKED_STRUCT(
 =============================================================================
 */
 
-#define BUFFERSIZE 0x1000
+#define BUFFERSIZE 0x800
 static int32_t bufferseg[BUFFERSIZE/4];
 
 int     mapon;
@@ -85,7 +82,8 @@ static maptype* mapheaderseg[NUMMAPS];
 byte    *audiosegs[NUMSNDCHUNKS];
 byte    *grsegs[NUMCHUNKS];
 #ifdef WOLF3D_CYD_PORT
-static word *cydMapScratch = NULL;
+static word cydMapScratchArray[maparea + 1];
+static word *cydMapScratch = cydMapScratchArray;
 #endif
 
 word    RLEWtag;
@@ -646,11 +644,15 @@ void CAL_SetupMapFile (void)
 //
 // allocate space for 3 64*64 planes
 //
+    word *mapbuffer = (word *) malloc(maparea * 2 * MAPPLANES);
+    CHECKMALLOCRESULT(mapbuffer);
     for (i=0;i<MAPPLANES;i++)
     {
-        mapsegs[i]=(word *) malloc(maparea*2);
-        CHECKMALLOCRESULT(mapsegs[i]);
+        mapsegs[i] = mapbuffer + i * maparea;
     }
+
+    close(maphandle);
+    maphandle = -1;
 }
 
 
@@ -704,20 +706,23 @@ void CAL_SetupAudioFile (void)
 ======================
 */
 
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_ca_preallocate(void)
+{
+    if(!cydMapCompBuffer)
+    {
+        cydMapCompBuffer = (byte *) malloc(10240);
+        CHECKMALLOCRESULT(cydMapCompBuffer);
+        furi_log_print_format(2, "Wolf3D", "Reserved map compressed buffer 10240 bytes");
+    }
+}
+#endif
+
 void CA_Startup (void)
 {
 #ifdef PROFILE
     unlink ("PROFILE.TXT");
     profilehandle = open("PROFILE.TXT", O_CREAT | O_WRONLY | O_TEXT);
-#endif
-
-#ifdef WOLF3D_CYD_PORT
-    if(!cydMapScratch)
-    {
-        cydMapScratch = (word *) malloc((maparea + 1) * sizeof(word));
-        CHECKMALLOCRESULT(cydMapScratch);
-        furi_log_print_format(2, "Wolf3D", "Reserved map scratch %u bytes", (unsigned)((maparea + 1) * sizeof(word)));
-    }
 #endif
 
     CAL_SetupMapFile ();
@@ -726,6 +731,8 @@ void CA_Startup (void)
 
     mapon = -1;
 }
+
+
 
 //==========================================================================
 
@@ -755,8 +762,8 @@ void CA_Shutdown (void)
         UNCACHEGRCHUNK(i);
     free(pictable);
 #ifdef WOLF3D_CYD_PORT
-    free(cydMapScratch);
-    cydMapScratch = NULL;
+    free(cydMapCompBuffer);
+    cydMapCompBuffer = NULL;
 #endif
 
     switch(oldsoundmode)
@@ -774,6 +781,19 @@ void CA_Shutdown (void)
     for(i=0; i<NUMSOUNDS; i++,start++)
         UNCACHEAUDIOCHUNK(start);
 }
+
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_ca_clear_gr_cache(void)
+{
+    furi_log_print_format(2, "Wolf3D", "cyd_ca_clear_gr_cache: clearing temporary menu graphics...");
+    for(int i = 0; i < NUMCHUNKS; i++)
+    {
+        if (i == STARTFONT) continue;
+        UNCACHEGRCHUNK(i);
+    }
+    furi_log_print_format(2, "Wolf3D", "cyd_ca_clear_gr_cache: complete. Heap: %u", esp_get_free_heap_size());
+}
+#endif
 
 //===========================================================================
 
@@ -1020,10 +1040,80 @@ void CAL_ExpandGrChunk (int chunk, int32_t *source)
 ======================
 */
 
+#ifdef WOLF3D_CYD_PORT
+struct HuffmanStream
+{
+    int handle;
+    byte buffer[512];
+    int bufPos;
+    int bufSize;
+
+    HuffmanStream(int h) : handle(h), bufPos(0), bufSize(0) {}
+
+    byte readByte()
+    {
+        if (bufPos >= bufSize)
+        {
+            bufSize = read(handle, buffer, sizeof(buffer));
+            bufPos = 0;
+            if (bufSize <= 0)
+                return 0; // EOF or error
+        }
+        return buffer[bufPos++];
+    }
+};
+
+static void CAL_HuffExpandStream(int handle, byte *dest, int32_t length, huffnode *hufftable)
+{
+    byte *end;
+    huffnode *headptr, *huffptr;
+
+    if(!length || !dest)
+    {
+        Quit("length or dest is null!");
+        return;
+    }
+
+    headptr = hufftable+254;        // head node is always node 254
+
+    end=dest+length;
+
+    HuffmanStream stream(handle);
+
+    byte val = stream.readByte();
+    byte mask = 1;
+    word nodeval;
+    huffptr = headptr;
+    while(1)
+    {
+        if(!(val & mask))
+            nodeval = huffptr->bit0;
+        else
+            nodeval = huffptr->bit1;
+        if(mask==0x80)
+        {
+            val = stream.readByte();
+            mask = 1;
+        }
+        else mask <<= 1;
+
+        if(nodeval<256)
+        {
+            *dest++ = (byte) nodeval;
+            huffptr = headptr;
+            if(dest>=end) break;
+        }
+        else
+        {
+            huffptr = hufftable + (nodeval - 256);
+        }
+    }
+}
+#endif
+
 void CA_CacheGrChunk (int chunk)
 {
     int32_t pos,compressed;
-    int32_t *source;
     int  next;
 
 #ifdef WOLF3D_CYD_PORT
@@ -1042,10 +1132,6 @@ void CA_CacheGrChunk (int chunk)
         return;                             // already in memory
     }
 
-//
-// load the chunk into a buffer, either the miscbuffer if it fits, or allocate
-// a larger buffer
-//
     pos = GRFILEPOS(chunk);
     if (pos<0)                              // $FFFFFFFF start is a sparse tile
         return;
@@ -1062,6 +1148,47 @@ void CA_CacheGrChunk (int chunk)
 
     lseek(grhandle,pos,SEEK_SET);
 
+#ifdef WOLF3D_CYD_PORT
+    int32_t expanded;
+    #define BLOCK           64
+    #define MASKBLOCK       128
+
+    if (chunk >= STARTTILE8 && chunk < STARTEXTERNS)
+    {
+        if (chunk<STARTTILE8M)          // tile 8s are all in one chunk!
+            expanded = BLOCK*NUMTILE8;
+        else if (chunk<STARTTILE16)
+            expanded = MASKBLOCK*NUMTILE8M;
+        else if (chunk<STARTTILE16M)    // all other tiles are one/chunk
+            expanded = BLOCK*4;
+        else if (chunk<STARTTILE32)
+            expanded = MASKBLOCK*4;
+        else if (chunk<STARTTILE32M)
+            expanded = BLOCK*16;
+        else
+            expanded = MASKBLOCK*16;
+    }
+    else
+    {
+        if (read(grhandle, &expanded, 4) < 0)
+        {
+            return;
+        }
+    }
+
+    cyd_trace_gr_expand(chunk, expanded);
+    grsegs[chunk] = (byte *) malloc(expanded);
+    if (!grsegs[chunk]) {
+        furi_log_print_format(2, "Wolf3D",
+            "WARNING: OOM graphics chunk %i expanded %i heap %u largest %u. Skipping.",
+            chunk, (int)expanded, (unsigned)esp_get_free_heap_size(),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return;
+    }
+
+    CAL_HuffExpandStream(grhandle, grsegs[chunk], expanded, grhuffman);
+#else
+    int32_t *source;
     if (compressed<=BUFFERSIZE)
     {
         if (read(grhandle,bufferseg,compressed) < 0)
@@ -1073,19 +1200,7 @@ void CA_CacheGrChunk (int chunk)
     else
     {
         source = (int32_t *) malloc(compressed);
-#ifdef WOLF3D_CYD_PORT
-        if (!source)
-        {
-            furi_log_print_format(2, "Wolf3D",
-                "OOM graphics temp chunk %i compressed %i pos %i heap %u largest %u",
-                chunk, (int)compressed, (int)pos,
-                (unsigned)esp_get_free_heap_size(),
-                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-            Quit("Out of memory at %s:%i", __FILE__, __LINE__);
-        }
-#else
         CHECKMALLOCRESULT(source);
-#endif
         if (read(grhandle,source,compressed) < 0)
         {
             free(source);
@@ -1097,6 +1212,7 @@ void CA_CacheGrChunk (int chunk)
 
     if (compressed>BUFFERSIZE)
         free(source);
+#endif
 }
 
 int32_t CA_ReadGrChunkExpanded (int chunk, byte *dest, int32_t destSize)
@@ -1152,27 +1268,6 @@ int32_t CA_ReadGrChunkExpanded (int chunk, byte *dest, int32_t destSize)
 //==========================================================================
 
 #ifdef WOLF3D_CYD_PORT
-struct HuffmanStream
-{
-    int handle;
-    byte buffer[512];
-    int bufPos;
-    int bufSize;
-
-    HuffmanStream(int h) : handle(h), bufPos(0), bufSize(0) {}
-
-    byte readByte()
-    {
-        if (bufPos >= bufSize)
-        {
-            bufSize = read(handle, buffer, sizeof(buffer));
-            bufPos = 0;
-            if (bufSize <= 0)
-                return 0; // EOF or error
-        }
-        return buffer[bufPos++];
-    }
-};
 
 static void CAL_HuffExpandPlanarToLinearStream(int handle, byte *dest, int32_t length, huffnode *hufftable)
 {
@@ -1356,6 +1451,15 @@ void CA_CacheMap (int mapnum)
     int32_t   expanded;
 #endif
 
+    char fname[32];
+    strcpy(fname, "gamemaps.");
+    strcat(fname, extension);
+    maphandle = open(fname, O_RDONLY | O_BINARY);
+    if (maphandle == -1)
+    {
+        Quit("Cannot open map file in CA_CacheMap!");
+    }
+
     mapon = mapnum;
 
 //
@@ -1375,17 +1479,31 @@ void CA_CacheMap (int mapnum)
             source = (word *) bufferseg;
         else
         {
+#ifdef WOLF3D_CYD_PORT
+            if (!cydMapCompBuffer)
+            {
+                cyd_ca_preallocate();
+            }
+            if (compressed > 10240)
+                Quit("Compressed map plane too large: %i > 10240", (int)compressed);
+            source = (word *) cydMapCompBuffer;
+#else
             bigbufferseg=malloc(compressed);
             CHECKMALLOCRESULT(bigbufferseg);
             source = (word *) bigbufferseg;
+#endif
         }
 
         if (read(maphandle,source,compressed) < 0)
         {
+#ifndef WOLF3D_CYD_PORT
             if (bigbufferseg)
             {
                 free(bigbufferseg);
             }
+#endif
+            close(maphandle);
+            maphandle = -1;
             return;
         }
 #ifdef CARMACIZED
@@ -1420,9 +1538,14 @@ void CA_CacheMap (int mapnum)
         CA_RLEWexpand (source+1,dest,size,RLEWtag);
 #endif
 
+#ifndef WOLF3D_CYD_PORT
         if (compressed>BUFFERSIZE)
             free(bigbufferseg);
+#endif
     }
+
+    close(maphandle);
+    maphandle = -1;
 }
 
 //===========================================================================
@@ -1448,3 +1571,58 @@ void CA_ClearSoundCache(void)
         }
     }
 }
+
+extern "C" bool CA_DecompressGrChunkToBuffer(int chunk, byte *dest, int32_t destSize)
+{
+#ifdef WOLF3D_CYD_PORT
+    if (CydSkipGrChunk(chunk))
+        return false;
+
+    int32_t pos = GRFILEPOS(chunk);
+    if (pos < 0)
+        return false;
+
+    int next = chunk + 1;
+    while (GRFILEPOS(next) == -1)
+        next++;
+
+    lseek(grhandle, pos, SEEK_SET);
+
+    int32_t expanded;
+    if (chunk >= STARTTILE8 && chunk < STARTEXTERNS)
+    {
+        return false; 
+    }
+    else
+    {
+        if (read(grhandle, &expanded, 4) < 0)
+            return false;
+    }
+
+    if (expanded > destSize)
+        return false; // Buffer too small!
+
+    CAL_HuffExpandStream(grhandle, dest, expanded, grhuffman);
+    return true;
+#else
+    return false;
+#endif
+}
+
+extern "C" int32_t CA_GetAudioChunkStartAndLen(int chunk, int32_t *start)
+{
+    if (chunk < 0 || chunk >= NUMSNDCHUNKS)
+    {
+        *start = -1;
+        return 0;
+    }
+    *start = audiostarts[chunk];
+    return audiostarts[chunk+1] - *start;
+}
+
+extern "C" void CA_GetAudioFileName(char *dest)
+{
+    strcpy(dest, afilename);
+    strcat(dest, audioext);
+}
+

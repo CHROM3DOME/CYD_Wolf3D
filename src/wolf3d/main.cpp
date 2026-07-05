@@ -38,6 +38,8 @@
 
 extern "C" int wolf_main(int argc, char *argv[]);
 extern "C" int wolf3d_is_ingame(void);
+extern "C" void cyd_ca_preallocate(void);
+extern "C" void cyd_hw_sound_preallocate(void);
 
 extern int viewscreenx;
 extern int viewscreeny;
@@ -45,7 +47,12 @@ extern int viewwidth;
 extern int viewheight;
 
 TFT_eSPI wolfTft;
+#ifdef LCDWIKI_ES3C28P
 SPIClass wolfSdSpi(VSPI);
+SPIClass wolfLcdSpi(HSPI);
+#else
+SPIClass wolfSdSpi(VSPI);
+#endif
 
 namespace {
 uint16_t palette565[256] = {};
@@ -63,6 +70,168 @@ const char *requiredBaseNames[] = {
   "VGADICT", "VGAGRAPH", "VGAHEAD", "VSWAP",
 };
 
+#ifdef LCDWIKI_ES3C28P
+constexpr int kLcdCs = 10;
+constexpr int kLcdDc = 46;
+constexpr int kLcdSck = 12;
+constexpr int kLcdMosi = 11;
+constexpr uint32_t kLcdSpiFrequency = 20000000;
+
+void lcdwikiWriteByte(uint8_t value) {
+  wolfLcdSpi.transfer(value);
+}
+
+void lcdwikiWriteBytes(const uint8_t *data, size_t length) {
+  wolfLcdSpi.writeBytes(data, length);
+}
+
+void lcdwikiCommand(uint8_t command) {
+  wolfLcdSpi.beginTransaction(SPISettings(kLcdSpiFrequency, MSBFIRST, SPI_MODE0));
+  digitalWrite(kLcdDc, LOW);
+  digitalWrite(kLcdCs, LOW);
+  lcdwikiWriteByte(command);
+  digitalWrite(kLcdCs, HIGH);
+  wolfLcdSpi.endTransaction();
+}
+
+void lcdwikiData(uint8_t data) {
+  wolfLcdSpi.beginTransaction(SPISettings(kLcdSpiFrequency, MSBFIRST, SPI_MODE0));
+  digitalWrite(kLcdDc, HIGH);
+  digitalWrite(kLcdCs, LOW);
+  lcdwikiWriteByte(data);
+  digitalWrite(kLcdCs, HIGH);
+  wolfLcdSpi.endTransaction();
+}
+
+void lcdwikiData16(uint16_t data) {
+  wolfLcdSpi.beginTransaction(SPISettings(kLcdSpiFrequency, MSBFIRST, SPI_MODE0));
+  digitalWrite(kLcdDc, HIGH);
+  digitalWrite(kLcdCs, LOW);
+  lcdwikiWriteByte(data >> 8);
+  lcdwikiWriteByte(data & 0xff);
+  digitalWrite(kLcdCs, HIGH);
+  wolfLcdSpi.endTransaction();
+}
+
+void lcdwikiSetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+  lcdwikiCommand(0x2a);
+  lcdwikiData16(x0);
+  lcdwikiData16(x1);
+  lcdwikiCommand(0x2b);
+  lcdwikiData16(y0);
+  lcdwikiData16(y1);
+  lcdwikiCommand(0x2c);
+}
+
+void lcdwikiFill(uint16_t color) {
+  lcdwikiSetWindow(0, 0, 319, 239);
+  const uint8_t pattern[] = {static_cast<uint8_t>(color >> 8), static_cast<uint8_t>(color & 0xff)};
+  uint8_t chunk[256];
+  for (size_t i = 0; i < sizeof(chunk); i += 2) {
+    chunk[i] = pattern[0];
+    chunk[i + 1] = pattern[1];
+  }
+  wolfLcdSpi.beginTransaction(SPISettings(kLcdSpiFrequency, MSBFIRST, SPI_MODE0));
+  digitalWrite(kLcdDc, HIGH);
+  digitalWrite(kLcdCs, LOW);
+  size_t bytesRemaining = 320UL * 240UL * 2UL;
+  while (bytesRemaining) {
+    const size_t bytes = min(bytesRemaining, sizeof(chunk));
+    lcdwikiWriteBytes(chunk, bytes);
+    bytesRemaining -= bytes;
+  }
+  digitalWrite(kLcdCs, HIGH);
+  wolfLcdSpi.endTransaction();
+}
+
+void lcdwikiPushRgb565(int x, int y, int w, int h, const uint16_t *pixels) {
+  if (!pixels || w <= 0 || h <= 0) return;
+  lcdwikiSetWindow(x, y, x + w - 1, y + h - 1);
+  wolfLcdSpi.beginTransaction(SPISettings(kLcdSpiFrequency, MSBFIRST, SPI_MODE0));
+  digitalWrite(kLcdDc, HIGH);
+  digitalWrite(kLcdCs, LOW);
+  lcdwikiWriteBytes(reinterpret_cast<const uint8_t *>(pixels), w * h * 2);
+  digitalWrite(kLcdCs, HIGH);
+  wolfLcdSpi.endTransaction();
+}
+
+uint16_t lcdwikiColor565(uint8_t r, uint8_t g, uint8_t b) {
+  const uint16_t color = ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3);
+  return (color >> 8) | (color << 8);
+}
+
+void lcdwikiPanelInit() {
+  pinMode(kLcdCs, OUTPUT);
+  pinMode(kLcdDc, OUTPUT);
+  pinMode(kLcdSck, OUTPUT);
+  pinMode(kLcdMosi, OUTPUT);
+  digitalWrite(kLcdCs, HIGH);
+  digitalWrite(kLcdDc, HIGH);
+  wolfLcdSpi.begin(kLcdSck, -1, kLcdMosi, kLcdCs);
+
+  lcdwikiCommand(0x01);
+  delay(150);
+  lcdwikiCommand(0x28);
+  lcdwikiCommand(0xcf);
+  lcdwikiData(0x00);
+  lcdwikiData(0x83);
+  lcdwikiData(0x30);
+  lcdwikiCommand(0xed);
+  lcdwikiData(0x64);
+  lcdwikiData(0x03);
+  lcdwikiData(0x12);
+  lcdwikiData(0x81);
+  lcdwikiCommand(0xe8);
+  lcdwikiData(0x85);
+  lcdwikiData(0x01);
+  lcdwikiData(0x79);
+  lcdwikiCommand(0xcb);
+  lcdwikiData(0x39);
+  lcdwikiData(0x2c);
+  lcdwikiData(0x00);
+  lcdwikiData(0x34);
+  lcdwikiData(0x02);
+  lcdwikiCommand(0xf7);
+  lcdwikiData(0x20);
+  lcdwikiCommand(0xea);
+  lcdwikiData(0x00);
+  lcdwikiData(0x00);
+  lcdwikiCommand(0xc0);
+  lcdwikiData(0x26);
+  lcdwikiCommand(0xc1);
+  lcdwikiData(0x11);
+  lcdwikiCommand(0xc5);
+  lcdwikiData(0x35);
+  lcdwikiData(0x3e);
+  lcdwikiCommand(0xc7);
+  lcdwikiData(0xbe);
+  lcdwikiCommand(0x36);
+  lcdwikiData(0x28);
+  lcdwikiCommand(0x3a);
+  lcdwikiData(0x55);
+  lcdwikiCommand(0x21);
+  lcdwikiCommand(0xb1);
+  lcdwikiData(0x00);
+  lcdwikiData(0x1b);
+  lcdwikiCommand(0xf2);
+  lcdwikiData(0x08);
+  lcdwikiCommand(0x26);
+  lcdwikiData(0x01);
+
+  const uint8_t gammaP[] = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
+  lcdwikiCommand(0xe0);
+  for (uint8_t value : gammaP) lcdwikiData(value);
+  const uint8_t gammaN[] = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78, 0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f};
+  lcdwikiCommand(0xe1);
+  for (uint8_t value : gammaN) lcdwikiData(value);
+
+  lcdwikiCommand(0x11);
+  delay(150);
+  lcdwikiCommand(0x29);
+  delay(50);
+}
+#endif
+
 void finishDmaPresent() {
 #if CYD_WOLF_USE_DMA_PRESENT
   if (tftDmaWriteOpen) {
@@ -75,6 +244,17 @@ void finishDmaPresent() {
 
 void fatalScreen(const String &message) {
   finishDmaPresent();
+#ifdef LCDWIKI_ES3C28P
+  if (message.indexOf("Mounting") >= 0) return;
+  if (message.indexOf("SD mount failed") >= 0) {
+    lcdwikiFill(0xf800);
+  } else if (message.indexOf("Missing") >= 0) {
+    lcdwikiFill(0xffe0);
+  } else {
+    lcdwikiFill(0x001f);
+  }
+  return;
+#endif
   wolfTft.fillScreen(TFT_BLACK);
   wolfTft.setTextColor(TFT_RED, TFT_BLACK);
   wolfTft.drawString("WOLF3D PORT", 12, 12, 4);
@@ -141,6 +321,9 @@ void fatalScreen(const String &message) {
 
 void statusScreen(const String &message) {
   finishDmaPresent();
+#ifdef LCDWIKI_ES3C28P
+  return;
+#endif
   wolfTft.fillRect(0, 86, 320, 40, TFT_BLACK);
   wolfTft.setTextColor(TFT_GREEN, TFT_BLACK);
   wolfTft.drawString(message, 12, 96, 2);
@@ -205,7 +388,11 @@ extern "C" void cyd_set_palette(const uint8_t *rgb, int first, int count) {
     if (r > 255) r = 255;
     if (g > 255) g = 255;
     if (b > 255) b = 255;
+#ifdef LCDWIKI_ES3C28P
+    palette565[first + i] = lcdwikiColor565((uint8_t)r, (uint8_t)g, (uint8_t)b);
+#else
     palette565[first + i] = wolfTft.color565((uint8_t)r, (uint8_t)g, (uint8_t)b);
+#endif
   }
 }
 
@@ -245,6 +432,19 @@ void presentIndexedRect(const uint8_t *pixels, int width, int height, int pitch,
   if (rectWidth <= 0 || rectHeight <= 0) return;
 
   const int top = max(0, (240 - height) / 2);
+#ifdef LCDWIKI_ES3C28P
+  for (int y0 = 0; y0 < rectHeight; y0 += CYD_WOLF_DMA_STRIPE_ROWS) {
+    const int rows = min(CYD_WOLF_DMA_STRIPE_ROWS, rectHeight - y0);
+    uint16_t *targetBase = stripe[0];
+    for (int row = 0; row < rows; ++row) {
+      const uint8_t *source = pixels + (sourceY + y0 + row) * pitch + sourceX;
+      uint16_t *target = targetBase + row * rectWidth;
+      for (int x = 0; x < rectWidth; ++x) target[x] = palette565[source[x]];
+    }
+    lcdwikiPushRgb565(sourceX, top + sourceY + y0, rectWidth, rows, targetBase);
+  }
+  return;
+#endif
   if (!tftDmaWriteOpen) {
     wolfTft.startWrite();
     tftDmaWriteOpen = true;
@@ -311,7 +511,7 @@ extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height
 
 void setup() {
   // Release Bluetooth controller memory to reclaim SRAM
-  // esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+  esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   
   // Power down WiFi radio
   // esp_wifi_stop();
@@ -322,9 +522,14 @@ void setup() {
 
   pinMode(TFT_BACKLIGHT_PIN, OUTPUT);
   digitalWrite(TFT_BACKLIGHT_PIN, HIGH);
+#ifdef LCDWIKI_ES3C28P
+  lcdwikiPanelInit();
+  lcdwikiFill(0x0000);
+#else
   wolfTft.init();
   wolfTft.setRotation(DISPLAY_ROTATION);
   wolfTft.setSwapBytes(true);
+#endif
 #if CYD_WOLF_USE_DMA_PRESENT
   tftDmaReady = wolfTft.initDMA();
   Serial.printf("TFT DMA present %s\n", tftDmaReady ? "enabled" : "disabled");
@@ -339,11 +544,15 @@ void setup() {
 #endif
 
   // Display visual build confirmation on CYD boot screen
+#ifndef LCDWIKI_ES3C28P
   wolfTft.fillScreen(TFT_BLACK);
   wolfTft.setTextColor(TFT_CYAN, TFT_BLACK);
+#endif
   char buildStr[32];
   snprintf(buildStr, sizeof(buildStr), "Build: B%d", CYD_WOLF_BUILD_NUMBER);
+#ifndef LCDWIKI_ES3C28P
   wolfTft.drawString(buildStr, 12, 12, 4);
+#endif
   fatalScreen("Mounting SD card...");
 
   wolfSdSpi.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
@@ -355,7 +564,9 @@ void setup() {
   String detectedExtension = detectGameData();
   if (!detectedExtension.length()) return;
 
+#ifndef LCDWIKI_ES3C28P
   wolfTft.fillScreen(TFT_BLACK);
+#endif
   statusScreen("Wolf3D data: ." + detectedExtension);
   Serial.printf("Wolf3D starting with .%s data, free heap: %u bytes\n",
                 detectedExtension.c_str(), ESP.getFreeHeap());

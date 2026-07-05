@@ -10,16 +10,7 @@
     #define MAPPLANES       2
 #endif
 
-#ifdef WOLF3D_CYD_PORT
-#define UNCACHEGRCHUNK(chunk) { \
-    if(grsegs[chunk] && (chunk) != STARTFONT) { \
-        free(grsegs[chunk]); \
-        grsegs[chunk]=NULL; \
-    } \
-}
-#else
-#define UNCACHEGRCHUNK(chunk) {if(grsegs[chunk]) {free(grsegs[chunk]); grsegs[chunk]=NULL;}}
-#endif
+#define UNCACHEGRCHUNK(chunk) {if(grsegs[chunk] && (chunk) != STARTFONT) {free(grsegs[chunk]); grsegs[chunk]=NULL;}}
 #define UNCACHEAUDIOCHUNK(chunk) {if(audiosegs[chunk]) {free(audiosegs[chunk]); audiosegs[chunk]=NULL;}}
 
 //===========================================================================

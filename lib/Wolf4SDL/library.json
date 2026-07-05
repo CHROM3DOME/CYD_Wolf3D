@@ -6,8 +6,7 @@
     "srcFilter": [
       "+<*>",
       "-<id_sd.cpp>",
-      "-<id_sd.cpp.full>",
-      "-<signon.cpp>"
+      "-<id_sd.cpp.full>"
     ]
   }
 }

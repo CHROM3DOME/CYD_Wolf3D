@@ -33,13 +33,14 @@ namespace {
 #define CYD_WOLF_HOT_PAGE_CACHE_MAX_BYTES 0
 #endif
 
-constexpr int PM_CACHE_SLOTS = 3;
-constexpr int PM_PREALLOC_SLOTS = 3;
+constexpr int PM_CACHE_SLOTS = 2;
+constexpr int PM_PREALLOC_SLOTS = PM_CACHE_SLOTS;
 constexpr int PM_EMPTY_PAGE_SIZE = 1;
 constexpr uint32_t PM_PREALLOC_SIZE = 4096;
 constexpr uint32_t PM_MIN_FREE_AFTER_ALLOC = 30000;
 constexpr bool PM_ENABLE_STATS_LOG = false;
 
+uint32_t pmMaxPageSize = 4096;
 uint32_t *PMPageOffsets = nullptr;
 uint32_t *PMPageSizes = nullptr;
 char PMPageFileName[13] = {};
@@ -144,18 +145,18 @@ void PM_PreallocateCache()
     for(int i = 0; i < PM_PREALLOC_SLOTS; ++i)
     {
         if(PMCache[i].data) continue;
-        PMCache[i].data = (uint8_t *) malloc(PM_PREALLOC_SIZE);
+        PMCache[i].data = (uint8_t *) malloc(pmMaxPageSize);
         if(!PMCache[i].data)
         {
             furi_log_print_format(2, "Wolf3D", "PM prealloc slot %i failed heap %u largest %u",
                 i, esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
             break;
         }
-        PMCache[i].capacity = PM_PREALLOC_SIZE;
+        PMCache[i].capacity = pmMaxPageSize;
         PMCache[i].page = -1;
         PMCache[i].lastUse = 0;
         furi_log_print_format(2, "Wolf3D", "PM prealloc slot %i size %u heap %u largest %u",
-            i, PM_PREALLOC_SIZE, esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            i, pmMaxPageSize, esp_get_free_heap_size(), heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 }
 
@@ -330,10 +331,17 @@ void PM_Startup()
             PMPageSizes[i] = pageOffsets[i + 1] - pageOffsets[i];
     }
 
+    pmMaxPageSize = 4096;
+    for(i = 0; i < ChunksInFile; i++)
+    {
+        if(PMPageSizes[i] > pmMaxPageSize)
+            pmMaxPageSize = PMPageSizes[i];
+    }
+    furi_log_print_format(2, "Wolf3D", "PM maximum page size: %u bytes", (unsigned)pmMaxPageSize);
+
     PMPages = nullptr;
     PMPageData = nullptr;
     PMPageDataSize = 0;
-    PM_PreallocateCache();
     free(pageLengths);
     fclose(file);
     return;
@@ -435,6 +443,11 @@ static uint8_t *PM_GetPageInternal(int page, bool allowHotPageCache)
     uint32_t size = PM_GetPageSize(page);
     if(size == 0) return PMEmptyPage;
 
+    if (!PMCache[0].data)
+    {
+        PM_PreallocateCache();
+    }
+
     if(allowHotPageCache)
     {
         uint8_t *hotPage = PM_FindHotPage(page);
@@ -494,11 +507,11 @@ static uint8_t *PM_GetPageInternal(int page, bool allowHotPageCache)
         slot.pinned = false;
 
         uint32_t allocSize = size;
-        if(freeHeap >= PM_PREALLOC_SIZE + PM_MIN_FREE_AFTER_ALLOC &&
-           largest >= PM_PREALLOC_SIZE &&
-           PM_PREALLOC_SIZE > size)
+        if(freeHeap >= pmMaxPageSize + PM_MIN_FREE_AFTER_ALLOC &&
+           largest >= pmMaxPageSize &&
+           pmMaxPageSize > size)
         {
-            allocSize = PM_PREALLOC_SIZE;
+            allocSize = pmMaxPageSize;
         }
 
         uint8_t *newData = (uint8_t *) malloc(allocSize);
@@ -556,5 +569,12 @@ void PM_UnpinPage(int page)
 uint8_t *PM_GetEnd()
 {
     return nullptr;
+}
+#endif
+
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_pm_preallocate(void)
+{
+    PM_PreallocateCache();
 }
 #endif

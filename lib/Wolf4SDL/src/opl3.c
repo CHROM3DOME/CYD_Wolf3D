@@ -1108,6 +1108,116 @@ static void OPL3_ProcessSlot(opl3_slot *slot)
     OPL3_SlotGenerate(slot);
 }
 
+#ifdef CYD_WOLF_USE_OPL2
+inline void OPL3_Generate4Ch(opl3_chip *chip, int16_t *buf4)
+{
+    opl3_channel *channel;
+    opl3_writebuf *writebuf;
+    int16_t **out;
+    int32_t mix[2];
+    uint8_t ii;
+    int16_t accm;
+    uint8_t shift = 0;
+
+    buf4[1] = OPL3_ClipSample(chip->mixbuff[1]);
+    buf4[3] = OPL3_ClipSample(chip->mixbuff[3]);
+
+    for (ii = 0; ii < 18; ii++)
+    {
+        OPL3_ProcessSlot(&chip->slot[ii]);
+    }
+
+    mix[0] = 0;
+    for (ii = 0; ii < 9; ii++)
+    {
+        channel = &chip->channel[ii];
+        out = channel->out;
+        accm = *out[0] + *out[1] + *out[2] + *out[3];
+        mix[0] += (int16_t)(accm & channel->cha);
+    }
+    chip->mixbuff[0] = mix[0];
+    chip->mixbuff[2] = 0;
+
+    buf4[0] = OPL3_ClipSample(chip->mixbuff[0]);
+    buf4[2] = 0;
+
+    mix[0] = 0;
+    for (ii = 0; ii < 9; ii++)
+    {
+        channel = &chip->channel[ii];
+        out = channel->out;
+        accm = *out[0] + *out[1] + *out[2] + *out[3];
+        mix[0] += (int16_t)(accm & channel->chb);
+    }
+    chip->mixbuff[1] = mix[0];
+    chip->mixbuff[3] = 0;
+
+    if ((chip->timer & 0x3f) == 0x3f)
+    {
+        chip->tremolopos = (chip->tremolopos + 1) % 210;
+    }
+    if (chip->tremolopos < 105)
+    {
+        chip->tremolo = chip->tremolopos >> chip->tremoloshift;
+    }
+    else
+    {
+        chip->tremolo = (210 - chip->tremolopos) >> chip->tremoloshift;
+    }
+
+    if ((chip->timer & 0x3ff) == 0x3ff)
+    {
+        chip->vibpos = (chip->vibpos + 1) & 7;
+    }
+
+    chip->timer++;
+
+    if (chip->eg_state)
+    {
+        while (shift < 13 && ((chip->eg_timer >> shift) & 1) == 0)
+        {
+            shift++;
+        }
+        if (shift > 12)
+        {
+            chip->eg_add = 0;
+        }
+        else
+        {
+            chip->eg_add = shift + 1;
+        }
+        chip->eg_timer_lo = (uint8_t)(chip->eg_timer & 0x3u);
+    }
+
+    if (chip->eg_timerrem || chip->eg_state)
+    {
+        if (chip->eg_timer == UINT64_C(0xfffffffff))
+        {
+            chip->eg_timer = 0;
+            chip->eg_timerrem = 1;
+        }
+        else
+        {
+            chip->eg_timer++;
+            chip->eg_timerrem = 0;
+        }
+    }
+
+    chip->eg_state ^= 1;
+
+    while ((writebuf = &chip->writebuf[chip->writebuf_cur]), writebuf->time <= chip->writebuf_samplecnt)
+    {
+        if (!(writebuf->reg & 0x200))
+        {
+            break;
+        }
+        writebuf->reg &= 0x1ff;
+        OPL3_WriteReg(chip, writebuf->reg, writebuf->data);
+        chip->writebuf_cur = (chip->writebuf_cur + 1) % OPL_WRITEBUF_SIZE;
+    }
+    chip->writebuf_samplecnt++;
+}
+#else
 inline void OPL3_Generate4Ch(opl3_chip *chip, int16_t *buf4)
 {
     opl3_channel *channel;
@@ -1173,7 +1283,7 @@ inline void OPL3_Generate4Ch(opl3_chip *chip, int16_t *buf4)
         mix[0] += (int16_t)((accm * channel->rightpan) >> 16);
 #else
         mix[0] += (int16_t)(accm & channel->chb);
- #endif
+#endif
         mix[1] += (int16_t)(accm & channel->chd);
     }
     chip->mixbuff[1] = mix[0];
@@ -1251,6 +1361,7 @@ inline void OPL3_Generate4Ch(opl3_chip *chip, int16_t *buf4)
     }
     chip->writebuf_samplecnt++;
 }
+#endif
 
 void OPL3_Generate(opl3_chip *chip, int16_t *buf)
 {

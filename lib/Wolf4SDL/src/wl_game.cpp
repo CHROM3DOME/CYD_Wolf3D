@@ -1179,6 +1179,10 @@ void RecordDemo (void) {return;}
 ==================
 */
 
+#ifdef WOLF3D_CYD_PORT
+extern "C" bool CA_DecompressGrChunkToBuffer(int chunk, byte *dest, int32_t destSize);
+#endif
+
 void PlayDemo (int demonumber)
 {
     int length;

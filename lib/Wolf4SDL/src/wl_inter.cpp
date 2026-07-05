@@ -2,6 +2,10 @@
 
 #include "wl_def.h"
 
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_ca_clear_gr_cache(void);
+#endif
+
 LRstruct LevelRatios[LRpack];
 int32_t lastBreathTime = 0;
 
@@ -946,16 +950,26 @@ void
 PreloadGraphics (void)
 {
 #ifdef WOLF3D_CYD_PORT
-    DrawPlayBorder ();
-    VW_UpdateScreen ();
-    return;
+    cyd_ca_clear_gr_cache();
 #endif
     DrawLevel ();
     ClearSplitVWB ();           // set up for double buffering in split screen
 
     VWB_BarScaledCoord (0, 0, screenWidth, screenHeight - scaleFactor * (STATUSLINES - 1), bordercol);
+#ifdef WOLF3D_CYD_PORT
+    CA_CacheGrChunk(GETPSYCHEDPIC);
+    int picnum = GETPSYCHEDPIC - STARTPICS;
+    if (grsegs[GETPSYCHEDPIC]) {
+        for (int b = 0; b < 16; ++b) {
+        }
+    }
+    VWB_DrawPicScaledCoord((screenWidth - scaleFactor * 224) / 2,
+                           (screenHeight - scaleFactor * (STATUSLINES + 48)) / 2, GETPSYCHEDPIC);
+    UNCACHEGRCHUNK(GETPSYCHEDPIC);
+#else
     LatchDrawPicScaledCoord ((screenWidth-scaleFactor*224)/16,
         (screenHeight-scaleFactor*(STATUSLINES+48))/2, GETPSYCHEDPIC);
+#endif
 
     WindowX = (screenWidth - scaleFactor*224)/2;
     WindowY = (screenHeight - scaleFactor*(STATUSLINES+48))/2;

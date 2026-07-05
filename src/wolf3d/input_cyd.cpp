@@ -17,6 +17,10 @@
 #include <Wire.h>
 #endif
 
+#ifndef CYD_BOOT_BUTTON_PIN
+#define CYD_BOOT_BUTTON_PIN 0
+#endif
+
 class HardwareSerial {
 public:
   int available(void);
@@ -24,11 +28,18 @@ public:
 };
 
 extern HardwareSerial Serial;
+extern "C" int digitalRead(uint8_t pin);
+extern "C" void pinMode(uint8_t pin, uint8_t mode);
 extern "C" void cyd_native_set_key(int32_t key, bool down);
 extern "C" void cyd_poll_touch_controls(void);
 
 namespace {
 bool heldKeys[256] = {};
+bool bootButtonReady = false;
+
+#ifndef INPUT_PULLUP
+#define INPUT_PULLUP 5
+#endif
 
 uint8_t heldIndexFor(int32_t key) {
   return static_cast<uint8_t>(key & 0xff);
@@ -94,6 +105,14 @@ void pumpSerialControls() {
     const bool release = isReleaseChar(ch);
     cyd_native_set_key(key, !release);
   }
+}
+
+void pollBootButton() {
+  if (!bootButtonReady) {
+    pinMode(CYD_BOOT_BUTTON_PIN, INPUT_PULLUP);
+    bootButtonReady = true;
+  }
+  cyd_native_set_key(SDLK_ESCAPE, digitalRead(CYD_BOOT_BUTTON_PIN) == 0);
 }
 }
 
@@ -204,6 +223,7 @@ void cyd_poll_mcp23017_buttons() {
 
 extern "C" void cyd_native_poll_input(void) {
   pumpSerialControls();
+  pollBootButton();
   cyd_poll_touch_controls();
 #if CYD_MCP23017_ENABLE
   cyd_poll_mcp23017_buttons();

@@ -49,7 +49,7 @@ extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 =============================================================================
 */
 
-extern byte signon[];
+extern const byte signon[];
 
 /*
 =============================================================================
@@ -883,7 +883,24 @@ void SignonScreen (void)                        // VGA version
     VL_MungePic (signon,320,200);
     VL_MemToScreen (signon,320,200,0,0);
 #else
-    VL_Bar(0, 0, 320, 200, 0);
+    byte *ptr = VL_LockSurface(curSurface);
+    if (ptr != NULL) {
+        for (int y = 0; y < 200; y++) {
+            for (int x = 0; x < 320; x++) {
+                byte col = signon[y * 320 + x];
+                if (scaleFactor == 1) {
+                    ptr[y * curPitch + x] = col;
+                } else {
+                    for (int dy = 0; dy < scaleFactor; dy++) {
+                        for (int dx = 0; dx < scaleFactor; dx++) {
+                            ptr[(y * scaleFactor + dy) * curPitch + (x * scaleFactor + dx)] = col;
+                        }
+                    }
+                }
+            }
+        }
+        VL_UnlockSurface(curSurface);
+    }
 #endif
 }
 
@@ -1240,6 +1257,11 @@ void DoJukebox(void)
 extern "C" uint32_t esp_get_free_heap_size(void);
 extern "C" uint32_t heap_caps_get_largest_free_block(uint32_t caps);
 extern "C" void furi_log_print_format(int, const char*, const char*, ...);
+#ifdef WOLF3D_CYD_PORT
+extern "C" void cyd_ca_preallocate(void);
+extern "C" void cyd_hw_sound_preallocate(void);
+extern "C" void cyd_pm_preallocate(void);
+#endif
 
 static void InitGame()
 {
@@ -1348,17 +1370,6 @@ static void InitGame()
     else
 #endif
 
-//
-// draw intro screen stuff
-//
-#if !defined(WOLF3D_CYD_PORT) || !CYD_WOLF_SKIP_BOOT_SCREENS
-    IntroScreen ();
-#endif
-
-//
-// load in and lock down some basic chunks
-//
-
     furi_log_print_format(2, "Wolf3D", "Before font cache: Free Heap = %u, Largest block = %u",
                           (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
 
@@ -1366,6 +1377,13 @@ static void InitGame()
 
     furi_log_print_format(2, "Wolf3D", "After font cache: Free Heap = %u, Largest block = %u",
                           (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
+
+//
+// draw intro screen stuff
+//
+#if !defined(WOLF3D_CYD_PORT) || !CYD_WOLF_SKIP_BOOT_SCREENS
+    IntroScreen ();
+#endif
 #ifndef WOLF3D_CYD_PORT
     CA_CacheGrChunk(STATUSBARPIC);
 #endif
@@ -1390,6 +1408,10 @@ static void InitGame()
         FinishSignon();
 #else
         VH_UpdateScreen();
+#endif
+
+#ifdef WOLF3D_CYD_PORT
+    CYD_STATUS("Startup complete...");
 #endif
 
 #ifdef WOLF3D_CYD_PORT

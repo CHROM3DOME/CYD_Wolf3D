@@ -374,10 +374,36 @@ void VL_GetPalette (SDL_Color *palette)
 void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 {
 #ifdef WOLF3D_CYD_PORT
-    (void)start;
-    (void)end;
-    (void)steps;
-    VL_FillPalette(red * 255 / 63, green * 255 / 63, blue * 255 / 63);
+    SDL_Color palette1[256], palette2[256];
+    VL_GetPalette(palette1);
+    memcpy(palette2, palette1, sizeof(SDL_Color) * 256);
+
+    red = red * 255 / 63;
+    green = green * 255 / 63;
+    blue = blue * 255 / 63;
+
+    for (int i = 0; i < steps; i++)
+    {
+        for (int j = start; j <= end; j++)
+        {
+            int orig = palette1[j].r;
+            int delta = red - orig;
+            palette2[j].r = orig + delta * i / steps;
+            orig = palette1[j].g;
+            delta = green - orig;
+            palette2[j].g = orig + delta * i / steps;
+            orig = palette1[j].b;
+            delta = blue - orig;
+            palette2[j].b = orig + delta * i / steps;
+        }
+
+        VL_SetPalette(palette2, true);
+        extern void VH_UpdateScreen(void);
+        VH_UpdateScreen();
+        SDL_Delay(12);
+    }
+
+    VL_FillPalette(red, green, blue);
     screenfaded = true;
 #else
 	int		    i,j,orig,delta;
@@ -437,9 +463,31 @@ void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 void VL_FadeIn (int start, int end, const SDL_Color *palette, int steps)
 {
 #ifdef WOLF3D_CYD_PORT
-    (void)start;
-    (void)end;
-    (void)steps;
+    SDL_Color palette1[256], palette2[256];
+    VL_GetPalette(palette1);
+    memcpy(palette2, palette1, sizeof(SDL_Color) * 256);
+
+    for (int i = 0; i < steps; i++)
+    {
+        for (int j = start; j <= end; j++)
+        {
+            int orig = palette1[j].r;
+            int delta = palette[j].r - orig;
+            palette2[j].r = orig + delta * i / steps;
+            orig = palette1[j].g;
+            delta = palette[j].g - orig;
+            palette2[j].g = orig + delta * i / steps;
+            orig = palette1[j].b;
+            delta = palette[j].b - orig;
+            palette2[j].b = orig + delta * i / steps;
+        }
+
+        VL_SetPalette(palette2, true);
+        extern void VH_UpdateScreen(void);
+        VH_UpdateScreen();
+        SDL_Delay(12);
+    }
+
     VL_SetPalette(palette, true);
     screenfaded = false;
 #else

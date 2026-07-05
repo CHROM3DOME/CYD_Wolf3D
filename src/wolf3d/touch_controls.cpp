@@ -132,6 +132,10 @@ void setTouchKeys(bool up, bool down, bool left, bool right, bool use, bool fire
 }
 
 extern "C" void cyd_poll_touch_controls(void) {
+#ifdef LCDWIKI_ES3C28P
+  setTouchKeys(false, false, false, false, false, false);
+  return;
+#endif
   int16_t x = 0;
   int16_t y = 0;
   if (!readTouchPoint(x, y)) {

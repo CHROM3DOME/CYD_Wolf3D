@@ -33,6 +33,8 @@
 #ifndef OPL_OPL3_H
 #define OPL_OPL3_H
 
+#define CYD_WOLF_USE_OPL2
+
 #ifdef __cplusplus
 extern "C" {
 #endif

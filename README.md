@@ -20,7 +20,8 @@ game data, sprites, sounds, maps, or other commercial assets.
   and streamed face graphics.
 - Touch controls for movement, use, and fire.
 - Optional MCP23017 I2C button controller.
-- GPIO 26 sound effects output using the ESP32 DAC.
+- GPIO 26 mono audio using the ESP32 DAC, with PCM sound effects and an
+  experimental AdLib music engine.
 - Optional WEMOS Lolin S2 Mini + GC9A01 circular display for the status face.
 - Diagnostic CYD hardware tester firmware.
 
@@ -80,6 +81,10 @@ pio run -e cyd_wolf3d -t upload --upload-port COMx
 ```
 
 Replace `COMx` with the port for your board.
+
+A prebuilt binary for the current CYD `.WL6` profile is also tracked at
+[firmware/cyd_wolf3d.bin](firmware/cyd_wolf3d.bin). Flashing from source is
+still preferred when changing configuration flags.
 
 Useful environments:
 
@@ -206,7 +211,26 @@ Common options:
 | `CYD_WOLF_DOWNSAMPLED_WEAPON` | Reduces weapon sprite cost. |
 | `CYD_S2_FACE_ENABLE` | Streams the status face to the optional S2 Mini display. |
 | `CYD_MCP23017_ENABLE` | Enables the I2C controller expander. |
-| `CYD_WOLF_BASIC_SOUND` | Enables low-overhead sound effects. |
+| `CYD_WOLF_BASIC_SOUND` | Enables the ESP32 DAC audio path. |
+
+## Audio
+
+The CYD build uses the ESP32's GPIO 26 DAC as an 8-bit mono output. Digitized
+Wolf3D effects are mixed at their original 7 kHz source rate with fixed-point
+stepping into the output stream, so raising the output sample rate does not
+change effect pitch.
+
+Music currently uses the Wolfenstein 3D AdLib data from `AUDIOT.*`. The port
+streams IMF register/value/delay commands from the SD card, sequences them at
+Wolf3D's 700 Hz IMF clock, and feeds a trimmed Nuked-OPL OPL2-compatible
+emulator. The current build drives the DAC at 49.7 kHz, giving 71 generated OPL
+samples per IMF tick. Tracks are rewound at end-of-song so menu and level music
+can loop.
+
+This AdLib path is functional but still experimental. Music is recognizable, but
+it has a low-frequency grumble on the CYD output path that does not match a PC
+AdLib recording. A future music path may use converted General MIDI or another
+pre-rendered/streamed format if that proves cleaner on this hardware.
 
 ## Troubleshooting
 
@@ -248,6 +272,7 @@ quickly overrun the ESP32's RAM and CPU budget.
 | `src/main.cpp` | CYD diagnostic hardware tester. |
 | `include/` | Board configuration. |
 | `lib/Wolf4SDL/` | Modified Wolf4SDL engine source. |
+| `firmware/` | Tracked CYD build binary for quick flashing. |
 | `sdcard/` | Test media used by the diagnostic firmware. |
 | `tools/` | Utility scripts for generated test media. |
 
@@ -255,7 +280,7 @@ quickly overrun the ESP32's RAM and CPU budget.
 
 Do not commit local PlatformIO build directories, serial logs, personal helper
 scripts, or machine-specific launchers. The repository ignores the usual local
-build products, `scratch/`, and local PowerShell wrappers.
+build products, scratch work, and local PowerShell wrappers.
 
 Do not commit commercial Wolfenstein 3D data files, extracted sprites, extracted
 sound effects, or generated game caches.
