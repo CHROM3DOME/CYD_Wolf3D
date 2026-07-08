@@ -633,11 +633,23 @@ static void ScanInfoPlane(void)
 ==================
 */
 
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_STATIC_DECOR_IMPOSTORS
+#if CYD_WOLF_STATIC_DECOR_CACHE
+extern "C" void CydClearDecorCache(void);
+#endif
+#endif
+
 void SetupGameLevel (void)
 {
     int  x,y;
     word *map;
     word tile;
+
+#if defined(WOLF3D_CYD_PORT) && CYD_WOLF_STATIC_DECOR_IMPOSTORS
+#if CYD_WOLF_STATIC_DECOR_CACHE
+    CydClearDecorCache();
+#endif
+#endif
 
 
     if (!loadedgame)
@@ -1349,11 +1361,16 @@ void Died (void)
 
     VH_UpdateScreen();
 
+#ifdef WOLF3D_CYD_PORT
+    IN_ClearKeysDown ();
+    FizzleFadeToColor(viewscreenx,viewscreeny,viewwidth,viewheight,4,70,false);
+#else
     VL_BarScaledCoord (viewscreenx,viewscreeny,viewwidth,viewheight,4);
 
     IN_ClearKeysDown ();
 
     FizzleFade(screenBuffer,viewscreenx,viewscreeny,viewwidth,viewheight,70,false);
+#endif
 
     IN_UserInput(100);
     SD_WaitSoundDone ();

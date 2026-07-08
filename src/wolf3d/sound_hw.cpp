@@ -192,6 +192,9 @@ static bool cyd_music_read_word(uint16_t *val) {
   return false;
 }
 
+static volatile bool cyd_music_pause_req = false;
+static volatile bool cyd_music_pause_ack = false;
+
 // OPL3 emulation task running on Core 0
 void cyd_music_task(void *pvParameters) {
   int16_t oplStereoBuffer[kOplSamplesPerTick * 2];
@@ -199,6 +202,14 @@ void cyd_music_task(void *pvParameters) {
   static uint32_t last_print_ms = 0;
   
   while (true) {
+    if (cyd_music_pause_req) {
+      cyd_music_pause_ack = true;
+      vTaskDelay(pdMS_TO_TICKS(2));
+      continue;
+    } else {
+      cyd_music_pause_ack = false;
+    }
+
     if (!cyd_music_active || cyd_music_fd == -1) {
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
@@ -740,6 +751,12 @@ extern "C" void cyd_hw_music_reset_opl(void) {
 
 extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t len) {
   cyd_hw_tone_init();
+  
+  cyd_music_pause_req = true;
+  while (!cyd_music_pause_ack) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+  }
+  
   cyd_music_active = false;
   
   if (cyd_music_fd != -1) {
@@ -750,6 +767,7 @@ extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t 
   cyd_music_fd = open(filename, O_RDONLY);
   if (cyd_music_fd == -1) {
     Serial.printf("cyd_hw_music_start: failed to open %s\n", filename);
+    cyd_music_pause_req = false;
     return;
   }
   
@@ -760,6 +778,7 @@ extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t 
     Serial.printf("cyd_hw_music_start: failed to read first word\n");
     close(cyd_music_fd);
     cyd_music_fd = -1;
+    cyd_music_pause_req = false;
     return;
   }
   
@@ -785,6 +804,7 @@ extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t 
   cyd_music_seq_time = 0;
   
   cyd_music_active = true;
+  cyd_music_pause_req = false;
 }
 
 extern "C" void cyd_hw_music_stop(void) {

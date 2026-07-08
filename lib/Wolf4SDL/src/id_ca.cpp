@@ -762,8 +762,9 @@ void CA_Shutdown (void)
         UNCACHEGRCHUNK(i);
     free(pictable);
 #ifdef WOLF3D_CYD_PORT
-    free(cydMapCompBuffer);
-    cydMapCompBuffer = NULL;
+    // Keep cydMapCompBuffer permanently allocated to prevent heap fragmentation
+    // free(cydMapCompBuffer);
+    // cydMapCompBuffer = NULL;
 #endif
 
     switch(oldsoundmode)

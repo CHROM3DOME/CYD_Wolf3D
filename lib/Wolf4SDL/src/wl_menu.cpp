@@ -1465,9 +1465,25 @@ CP_SaveGame (int quick)
                          LSM_W - LSItems.indent - 16, 10, BKGDCOLOR);
             VW_UpdateScreen ();
 
+#ifdef WOLF3D_CYD_PORT
+            {
+                int32_t seconds = gamestate.TimeCount / 70;
+                int32_t minutes = seconds / 60;
+                seconds %= 60;
+                snprintf (input, 32, "Ep%d M%d - %02d:%02d HP:%d",
+                          gamestate.episode + 1, gamestate.mapon + 1,
+                          (int)minutes, (int)seconds, gamestate.health);
+            }
+            PrintX = LSM_X + LSItems.indent + 2;
+            PrintY = LSM_Y + which * 13 + 1;
+            US_Print (input);
+            VW_UpdateScreen ();
+            if (1)
+#else
             if (US_LineInput
                 (LSM_X + LSItems.indent + 2, LSM_Y + which * 13 + 1, input, input, true, 31,
                  LSM_W - LSItems.indent - 30))
+#endif
             {
                 SaveGamesAvail[which] = 1;
                 strcpy (&SaveGameNames[which][0], input);
@@ -3259,12 +3275,17 @@ IntroScreen (void)
                 VWB_Bar (129, 163 - 8 * i, 6, 5, XMSCOLOR - i);
     }
 #else
+#ifdef WOLF3D_CYD_PORT
+    for (i = 0; i < 10; i++)
+        VWB_Bar (49, 163 - 8 * i, 6, 5, MAINCOLOR - i);
+#else
     for (i = 0; i < 10; i++)
         VWB_Bar (49, 163 - 8 * i, 6, 5, MAINCOLOR - i);
     for (i = 0; i < 10; i++)
         VWB_Bar (89, 163 - 8 * i, 6, 5, EMSCOLOR - i);
     for (i = 0; i < 10; i++)
         VWB_Bar (129, 163 - 8 * i, 6, 5, XMSCOLOR - i);
+#endif
 #endif
 
 
@@ -3277,11 +3298,16 @@ IntroScreen (void)
     if (IN_JoyPresent())
         VWB_Bar (164, 105, 12, 2, FILLCOLOR);
 
+#ifdef WOLF3D_CYD_PORT
+    VWB_Bar (164, 128, 12, 2, FILLCOLOR);
+    VWB_Bar (164, 151, 12, 2, FILLCOLOR);
+#else
     if (AdLibPresent && !SoundBlasterPresent)
         VWB_Bar (164, 128, 12, 2, FILLCOLOR);
 
     if (SoundBlasterPresent)
         VWB_Bar (164, 151, 12, 2, FILLCOLOR);
+#endif
 
 //    if (SoundSourcePresent)
 //        VWB_Bar (164, 174, 12, 2, FILLCOLOR);

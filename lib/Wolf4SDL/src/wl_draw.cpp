@@ -892,22 +892,19 @@ void GlobalScalePost(byte *vidbuf, unsigned pitch)
 #if defined(WOLF3D_CYD_PORT) && CYD_WOLF_STATIC_DECOR_IMPOSTORS
 #if CYD_WOLF_STATIC_DECOR_CACHE
 namespace {
-constexpr int CYD_DECOR_CACHE_DIM = 8;
-constexpr int CYD_DECOR_CACHE_COUNT = CYD_WOLF_DECOR_CACHE_COUNT;
-byte cydDecorCache[CYD_DECOR_CACHE_COUNT][CYD_DECOR_CACHE_DIM * CYD_DECOR_CACHE_DIM];
-bool cydDecorCacheReady[CYD_DECOR_CACHE_COUNT];
-}
+constexpr int CYD_DECOR_CACHE_DIM = 16;
+constexpr int CYD_DECOR_CACHE_COUNT = 16;
 
-static void CydBuildDecorCache(int shapenum)
+struct CydDecorCacheSlot {
+    int shapenum = -1;
+    byte pixels[CYD_DECOR_CACHE_DIM * CYD_DECOR_CACHE_DIM];
+};
+
+CydDecorCacheSlot cydDecorCache[CYD_DECOR_CACHE_COUNT];
+
+static void CydBuildDecorCache(int slotIndex, int shapenum)
 {
-    if(shapenum < SPR_STAT_0 || shapenum >= SPR_STAT_0 + CYD_DECOR_CACHE_COUNT)
-        return;
-
-    int stat = shapenum - SPR_STAT_0;
-    if(cydDecorCacheReady[stat])
-        return;
-
-    memset(cydDecorCache[stat], 0, sizeof(cydDecorCache[stat]));
+    memset(cydDecorCache[slotIndex].pixels, 0, sizeof(cydDecorCache[slotIndex].pixels));
 
     t_compshape *shape = (t_compshape *) PM_GetSprite(shapenum);
     word *cmdptr = (word *) shape->dataofs;
@@ -931,23 +928,51 @@ static void CydBuildDecorCache(int shapenum)
                 int cx = (i * CYD_DECOR_CACHE_DIM) >> 6;
                 int cy = ((int)j * CYD_DECOR_CACHE_DIM) >> 6;
                 if(cx >= 0 && cx < CYD_DECOR_CACHE_DIM && cy >= 0 && cy < CYD_DECOR_CACHE_DIM)
-                    cydDecorCache[stat][cy * CYD_DECOR_CACHE_DIM + cx] = col;
+                    cydDecorCache[slotIndex].pixels[cy * CYD_DECOR_CACHE_DIM + cx] = col;
             }
         }
     }
+}
 
-    cydDecorCacheReady[stat] = true;
+static int CydGetDecorCacheSlot(int shapenum)
+{
+    for(int i = 0; i < CYD_DECOR_CACHE_COUNT; ++i)
+    {
+        if(cydDecorCache[i].shapenum == shapenum)
+            return i;
+    }
+    for(int i = 0; i < CYD_DECOR_CACHE_COUNT; ++i)
+    {
+        if(cydDecorCache[i].shapenum < 0)
+        {
+            cydDecorCache[i].shapenum = shapenum;
+            CydBuildDecorCache(i, shapenum);
+            return i;
+        }
+    }
+    static int victim = 0;
+    int slot = victim;
+    victim = (victim + 1) % CYD_DECOR_CACHE_COUNT;
+    cydDecorCache[slot].shapenum = shapenum;
+    CydBuildDecorCache(slot, shapenum);
+    return slot;
+}
+}
+
+extern "C" void CydClearDecorCache(void)
+{
+    for(int i = 0; i < CYD_DECOR_CACHE_COUNT; ++i)
+    {
+        cydDecorCache[i].shapenum = -1;
+    }
 }
 
 static bool CydScaleDecorCache(int xcenter, int shapenum, unsigned height)
 {
-    if(shapenum < SPR_STAT_0 || shapenum >= SPR_STAT_0 + CYD_DECOR_CACHE_COUNT)
-        return true;
-
-    CydBuildDecorCache(shapenum);
-    int stat = shapenum - SPR_STAT_0;
-    if(!cydDecorCacheReady[stat])
+    if(shapenum < SPR_STAT_0 || shapenum > SPR_STAT_47)
         return false;
+
+    int slotIndex = CydGetDecorCacheSlot(shapenum);
 
     unsigned scale = height >> 3;
     if(!scale) return true;
@@ -957,36 +982,49 @@ static bool CydScaleDecorCache(int xcenter, int shapenum, unsigned height)
     if(halfWidth > 30) halfWidth = 30;
 
     int top = viewheight / 2 - (int)scale;
-    int bottom = viewheight / 2 + (int)scale - 1;
-    if(bottom < 0 || top >= viewheight) return true;
-    if(top < 0) top = 0;
-    if(bottom >= viewheight) bottom = viewheight - 1;
-
     int left = xcenter - halfWidth;
     int right = xcenter + halfWidth;
+    int originalLeft = left;
+    int originalWidth = right - left + 1;
     if(right < 0 || left >= viewwidth) return true;
     if(left < 0) left = 0;
     if(right >= viewwidth) right = viewwidth - 1;
 
-    int width = right - left + 1;
-    int heightPx = bottom - top + 1;
-    if(width <= 0 || heightPx <= 0) return true;
+    top = viewheight / 2 - (int)scale;
+    int bottom = viewheight / 2 + (int)scale - 1;
+    int originalTop = top;
+    int originalHeight = bottom - top + 1;
+    if(bottom < 0 || top >= viewheight) return true;
+    if(top < 0) top = 0;
+    if(bottom >= viewheight) bottom = viewheight - 1;
 
-    byte *cache = cydDecorCache[stat];
-    for(int y = top; y <= bottom; y++)
+    if(originalWidth <= 0 || originalHeight <= 0) return true;
+
+    byte *cache = cydDecorCache[slotIndex].pixels;
+    int y_step = (CYD_DECOR_CACHE_DIM * 256) / originalHeight;
+    int y_start_frac = ((top - originalTop) * CYD_DECOR_CACHE_DIM * 256) / originalHeight;
+
+    for(int x = left; x <= right; x++)
     {
-        int sy = ((y - top) * CYD_DECOR_CACHE_DIM) / heightPx;
-        byte *dst = vbuf + y * vbufPitch + left;
-        for(int x = left; x <= right; x++, dst++)
+        if(wallheight[x] > (int)height)
+            continue;
+            
+        int sx = ((x - originalLeft) * CYD_DECOR_CACHE_DIM) / originalWidth;
+        byte *srcCol = &cache[sx];
+        
+        int y_frac = y_start_frac;
+        byte *dst = vbuf + top * vbufPitch + x;
+        
+        for(int y = top; y <= bottom; y++, dst += vbufPitch)
         {
-            if(wallheight[x] > (int)height)
-                continue;
-            int sx = ((x - left) * CYD_DECOR_CACHE_DIM) / width;
-            byte col = cache[sy * CYD_DECOR_CACHE_DIM + sx];
+            int sy = y_frac >> 8;
+            byte col = srcCol[sy * CYD_DECOR_CACHE_DIM];
             if(col)
                 *dst = col;
+            y_frac += y_step;
         }
     }
+
     return true;
 }
 #endif
@@ -1683,8 +1721,7 @@ void ScaleShape (int xcenter, int shapenum, unsigned height, uint32_t flags)
         if(CydScaleDecorCache(xcenter, shapenum, height))
             return;
 #endif
-        CydScaleDecorImpostor(xcenter, shapenum, height);
-        return;
+        // Fall through to full resolution ScaleShape if uncached!
     }
 #endif
 #if CYD_WOLF_HIDE_TINY_DECOR_SPRITES

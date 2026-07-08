@@ -573,3 +573,108 @@ finished:
     VL_Flip();
     return false;
 }
+
+boolean FizzleFadeToColor (int x1, int y1,
+    unsigned width, unsigned height, byte color, unsigned frames, boolean abortable)
+{
+    unsigned x, y, frame, pixperframe;
+    int32_t  rndval = 0, lastrndval;
+    int      first = 1;
+
+    lastrndval = 0;
+    pixperframe = width * height / frames;
+
+    IN_StartAck ();
+
+    frame = GetTimeCount();
+
+    do
+    {
+        IN_ProcessEvents();
+
+        if(abortable && IN_CheckAck ())
+        {
+            return true;
+        }
+
+        byte *destptr = VL_LockSurface(screen);
+
+        if(destptr != NULL)
+        {
+            rndval = lastrndval;
+
+            // When using double buffering, we have to copy the pixels of the last AND the current frame.
+            // Only for the first frame, there is no "last frame"
+            for(int i = first; i < 2; i++)
+            {
+                for(unsigned p = 0; p < pixperframe; p++)
+                {
+                    //
+                    // seperate random value into x/y pair
+                    //
+
+                    x = rndval >> rndbits_y;
+                    y = rndval & ((1 << rndbits_y) - 1);
+
+                    //
+                    // advance to next random element
+                    //
+
+                    rndval = (rndval >> 1) ^ (rndval & 1 ? 0 : rndmask);
+
+                    if(x >= width || y >= height)
+                    {
+                        if(rndval == 0)     // entire sequence has been completed
+                            goto finished;
+                        p--;
+                        continue;
+                    }
+
+                    //
+                    // write color directly
+                    //
+#ifdef WOLF3D_CYD_PORT
+                    *(destptr + (y1 + y) * screen->pitch + x1 + x) = color;
+#else
+                    uint32_t fullcol = SDL_MapRGB(screen->format, curpal[color].r, curpal[color].g, curpal[color].b);
+                    memcpy(destptr + (y1 + y) * screen->pitch + (x1 + x) * screen->format->BytesPerPixel,
+                        &fullcol, screen->format->BytesPerPixel);
+#endif
+
+                    if(rndval == 0)		// entire sequence has been completed
+                        goto finished;
+                }
+
+                if(!i || first) lastrndval = rndval;
+            }
+
+            // If there is no double buffering, we always use the "first frame" case
+            first = 0;
+
+            VL_UnlockSurface(screen);
+            VL_Flip();
+        }
+        else
+        {
+            // No surface, so only enhance rndval
+            for(int i = first; i < 2; i++)
+            {
+                for(unsigned p = 0; p < pixperframe; p++)
+                {
+                    rndval = (rndval >> 1) ^ (rndval & 1 ? 0 : rndmask);
+                    if(rndval == 0)
+                        goto finished;
+                }
+            }
+        }
+
+        frame++;
+        Delay(frame - GetTimeCount());        // don't go too fast
+    } while (1);
+
+finished:
+    VL_UnlockSurface(screen);
+    VL_BarScaledCoord (x1, y1, width, height, color);
+    VL_Flip();
+    return false;
+}

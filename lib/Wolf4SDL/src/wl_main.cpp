@@ -154,8 +154,8 @@ void ReadConfig(void)
     mouseadjustment_v = mouseadjustment = 0;
     always_run = false;
     crosshair = false;
-    SD_SetMusicMode(smm_Off);
-    SD_SetSoundMode(sdm_PC);
+    SD_SetMusicMode(smm_AdLib);
+    SD_SetSoundMode(sdm_AdLib);
     SD_SetDigiDevice(sds_SoundBlaster);
     return;
 #else
@@ -972,6 +972,7 @@ static const int wolfdigimap[] =
         DOGBARKSND,             1,  -1,
         CLOSEDOORSND,           2,  -1,
         OPENDOORSND,            3,  -1,
+        PLAYERDEATHSND,        12,  -1,
         ATKMACHINEGUNSND,       4,   0,
         ATKPISTOLSND,           5,   0,
         ATKGATLINGSND,          6,   0,
@@ -1031,6 +1032,7 @@ static const int wolfdigimap[] =
         HALTSND,                0,  -1,
         CLOSEDOORSND,           2,  -1,
         OPENDOORSND,            3,  -1,
+        PLAYERDEATHSND,        10,  -1,
         ATKMACHINEGUNSND,       4,   0,
         ATKPISTOLSND,           5,   0,
         ATKGATLINGSND,          6,   0,
@@ -1356,9 +1358,7 @@ static void InitGame()
     ReadConfig ();
 
     CYD_STATUS("Save slots...");
-#ifndef WOLF3D_CYD_PORT
     SetupSaveGames();
-#endif
 
 //
 // HOLDING DOWN 'M' KEY?

@@ -143,6 +143,7 @@ extern "C" int wolf_close(int fd) {
   SDLock lock;
   if (fd <= 0 || fd >= maxFiles || !descriptors[fd]) return -1;
   descriptors[fd].close();
+  descriptors[fd] = File();
   return 0;
 }
 extern "C" int32_t wolf_read(int fd, void *buffer, size_t count) {

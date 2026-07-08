@@ -411,9 +411,9 @@ globalsoundpos channelSoundPos[8];
 boolean AdLibPresent = false;
 boolean SoundBlasterPresent = false;
 boolean SoundSourcePresent = false;
-SDMode SoundMode = sdm_Off;
-SDSMode DigiMode = sds_Off;
-SMMode MusicMode = smm_Off;
+SDMode SoundMode = sdm_AdLib;
+SDSMode DigiMode = sds_SoundBlaster;
+SMMode MusicMode = smm_AdLib;
 int DigiMap[LASTSOUND];
 int DigiChannel[LASTSOUND];
 
@@ -565,7 +565,10 @@ boolean SD_PlaySound(soundnames sound) {
         case NOITEMSND:
             if(!playPcSpeakerSound(sound)) playTone(sound, 100, 55);
             break;
-        case PLAYERDEATHSND:   playTone(sound, 90, 300); break;
+        case PLAYERDEATHSND:
+            if(playPinnedPcm(ch, sound)) { cydUsedPcm = true; break; }
+            if(!playPcSpeakerSound(sound)) playTone(sound, 90, 300);
+            break;
         default:
             cyd_trace_sound((int)sound, 0);
             return false;
