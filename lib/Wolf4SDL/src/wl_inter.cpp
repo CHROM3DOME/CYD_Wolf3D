@@ -949,13 +949,9 @@ PreloadUpdate (unsigned current, unsigned total)
 void
 PreloadGraphics (void)
 {
-#ifdef WOLF3D_CYD_PORT
-    cyd_ca_clear_gr_cache();
-#endif
-    DrawLevel ();
     ClearSplitVWB ();           // set up for double buffering in split screen
 
-    VWB_BarScaledCoord (0, 0, screenWidth, screenHeight - scaleFactor * (STATUSLINES - 1), bordercol);
+    VWB_BarScaledCoord (0, 0, screenWidth, screenHeight, bordercol);
 #ifdef WOLF3D_CYD_PORT
     CA_CacheGrChunk(GETPSYCHEDPIC);
     int picnum = GETPSYCHEDPIC - STARTPICS;

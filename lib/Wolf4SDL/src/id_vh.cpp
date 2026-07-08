@@ -161,6 +161,8 @@ void VWB_DrawTile8M (int x, int y, int tile)
 	VL_MemToScreen (((byte *)grsegs[STARTTILE8M])+tile*64,8,8,x,y);
 }
 
+extern "C" void furi_log_print_format(int, const char *, const char *, ...);
+
 void VWB_DrawPic (int x, int y, int chunknum)
 {
 	int	picnum = chunknum - STARTPICS;

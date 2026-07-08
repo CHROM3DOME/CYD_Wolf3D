@@ -586,7 +586,11 @@ static void OPL3_PhaseGenerate(opl3_slot *slot)
     {
         slot->pg_phase = 0;
     }
-    slot->pg_phase += (basefreq * mt[slot->reg_mult]) >> 1;
+    uint32_t step = (basefreq * mt[slot->reg_mult]) >> 1;
+#ifdef CYD_WOLF_USE_OPL2
+    step = ((uint64_t)step * chip->pitchscale) >> 16;
+#endif
+    slot->pg_phase += step;
     /* Rhythm mode */
     noise = chip->noise;
     slot->pg_phase_out = phase;
@@ -1454,6 +1458,7 @@ void OPL3_Reset(opl3_chip *chip, uint32_t samplerate)
     }
     chip->noise = 1;
     chip->rateratio = (samplerate << RSM_FRAC) / 49716;
+    chip->pitchscale = (49716 << 16) / samplerate;
     chip->tremoloshift = 4;
     chip->vibshift = 1;
 

@@ -13,6 +13,7 @@
 #ifdef WOLF3D_CYD_PORT
 extern "C" void cyd_wall_cache_preload(void);
 extern "C" void CydFreeWallCache(void);
+extern "C" void ensureOplTask(void);
 extern "C" void furi_log_print_format(int, const char *, const char *, ...);
 #ifndef CYD_WOLF_VIEW_SIZE
 #define CYD_WOLF_VIEW_SIZE 20
@@ -1315,6 +1316,9 @@ static void InitGame()
     IN_Startup ();
     CYD_STATUS("Page manager...");
     PM_Startup ();
+#ifdef WOLF3D_CYD_PORT
+    cyd_pm_preallocate();
+#endif
     CYD_STATUS("Sound startup...");
     SD_Startup ();
     CYD_STATUS("Cache startup...");
@@ -1377,6 +1381,24 @@ static void InitGame()
 
     furi_log_print_format(2, "Wolf3D", "After font cache: Free Heap = %u, Largest block = %u",
                           (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
+
+#ifdef WOLF3D_CYD_PORT
+    // Pre-allocate the shared banner/PCM buffer while the heap still has a
+    // large contiguous block. After the wall cache and music allocate later,
+    // fragmentation may prevent this 16384-byte allocation from succeeding.
+    {
+        extern byte *cyd_banner_buffer;
+        if (!cyd_banner_buffer) {
+            cyd_banner_buffer = (byte *) malloc(16384);
+            furi_log_print_format(2, "Wolf3D", "Banner/PCM buffer: %p heap %u largest %u",
+                                  cyd_banner_buffer,
+                                  (unsigned)esp_get_free_heap_size(),
+                                  (unsigned)heap_caps_get_largest_free_block(0x00000800));
+        }
+    }
+    // Pre-allocate OPL music task now while we have plenty of contiguous DRAM
+    ensureOplTask();
+#endif
 
 //
 // draw intro screen stuff

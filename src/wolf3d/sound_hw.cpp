@@ -43,6 +43,8 @@ constexpr uint32_t kAudioTimerPeriodTicks = (kAudioTimerClockHz + (kAudioSampleR
 constexpr int kMusicSamplesPerTick = kAudioSampleRate / kImfTickRate;
 constexpr uint32_t kPcmSourceStepQ16 = (kWolfPcmSampleRate << 16) / kAudioSampleRate;
 constexpr uint16_t kPcSpeakerTicksPerStep = (kAudioSampleRate + 70) / 140;
+constexpr uint32_t kOplSampleRate = 22400;
+constexpr int kOplSamplesPerTick = kOplSampleRate / kImfTickRate;
 bool ready = false;
 hw_timer_t *pcmTimer = nullptr;
 portMUX_TYPE pcmMux = portMUX_INITIALIZER_UNLOCKED;
@@ -87,6 +89,17 @@ volatile uint32_t pcPhase = 0;
 volatile uint8_t pcAmplitude = 28;
 int32_t musicHighPassPrevIn = 0;
 int32_t musicHighPassPrevOut = 0;
+
+// Resource Monitor variables
+volatile uint32_t stat_isr_count = 0;
+volatile uint32_t stat_isr_total_us = 0;
+volatile uint32_t stat_isr_max_us = 0;
+volatile uint32_t stat_ringbuf_starves = 0;
+
+volatile uint32_t stat_task_count = 0;
+volatile uint32_t stat_task_total_us = 0;
+volatile uint32_t stat_task_max_us = 0;
+volatile uint32_t stat_task_ticks_processed = 0;
 
 uint8_t amplitudeFromVolume(uint8_t volume) {
   uint32_t amplitude = (uint32_t)CYD_WOLF_SOUND_DUTY * 2;
@@ -181,7 +194,9 @@ static bool cyd_music_read_word(uint16_t *val) {
 
 // OPL3 emulation task running on Core 0
 void cyd_music_task(void *pvParameters) {
-  int16_t stereoBuffer[kMusicSamplesPerTick * 2];
+  int16_t oplStereoBuffer[kOplSamplesPerTick * 2];
+  int16_t oplMonoBuffer[kOplSamplesPerTick];
+  static uint32_t last_print_ms = 0;
   
   while (true) {
     if (!cyd_music_active || cyd_music_fd == -1) {
@@ -189,70 +204,130 @@ void cyd_music_task(void *pvParameters) {
       continue;
     }
     
-    const int free_space = cyd_music_ringbuf_free_space();
-    const int ticks_to_process = free_space / kMusicSamplesPerTick;
-    
-    if (ticks_to_process <= 0) {
+    int free_space = cyd_music_ringbuf_free_space();
+    if (free_space < kMusicSamplesPerTick) {
+      // Buffer is full enough. Delay 1ms and check again.
       vTaskDelay(pdMS_TO_TICKS(1));
       continue;
     }
     
-    for (int t = 0; t < ticks_to_process; ++t) {
-      // 1. Process 1 IMF sequencer tick (700 Hz)
-      if (cyd_music_file_bytes_read >= cyd_music_file_len && cyd_music_buf_index >= cyd_music_buf_avail) {
-        cyd_music_rewind_sequence();
-      }
+    uint64_t start_time = esp_timer_get_time();
 
-      while (cyd_music_file_bytes_read < cyd_music_file_len || cyd_music_buf_index < cyd_music_buf_avail) {
-        if (cyd_music_seq_time > cyd_music_tick_count) break;
-        
-        uint16_t reg_val = 0;
-        if (!cyd_music_read_word(&reg_val)) break;
-        uint8_t reg = reg_val & 0xFF;
-        uint8_t val = (reg_val >> 8) & 0xFF;
-        
-        portENTER_CRITICAL(&oplMux);
-        OPL3_WriteReg(&oplChip, reg, val);
-        portEXIT_CRITICAL(&oplMux);
-        
-        uint16_t delay = 0;
-        if (!cyd_music_read_word(&delay)) break;
-        cyd_music_seq_time = cyd_music_tick_count + delay;
-      }
-      cyd_music_tick_count++;
-      
-      // Generate one 700 Hz IMF tick worth of audio at the DAC rate.
-      portENTER_CRITICAL(&oplMux);
-      OPL3_GenerateStream(&oplChip, stereoBuffer, kMusicSamplesPerTick);
-      portEXIT_CRITICAL(&oplMux);
-      
-      // 3. Convert to mono and push into the ring buffer
-      for (int i = 0; i < kMusicSamplesPerTick; ++i) {
-        int16_t left = stereoBuffer[i * 2];
-        int32_t mono = left;
-        int32_t filtered = mono - musicHighPassPrevIn + ((musicHighPassPrevOut * 255) >> 8);
-        musicHighPassPrevIn = mono;
-        musicHighPassPrevOut = filtered;
-        if (filtered < -32768) filtered = -32768;
-        if (filtered > 32767) filtered = 32767;
-
-        cyd_music_ringbuf_push((int16_t)filtered);
-      }
+    // 1. Process 1 IMF sequencer tick (700 Hz)
+    if (cyd_music_file_bytes_read >= cyd_music_file_len && cyd_music_buf_index >= cyd_music_buf_avail) {
+      cyd_music_rewind_sequence();
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1));
+    while (cyd_music_file_bytes_read < cyd_music_file_len || cyd_music_buf_index < cyd_music_buf_avail) {
+      if (cyd_music_seq_time > cyd_music_tick_count) break;
+      
+      uint16_t reg_val = 0;
+      if (!cyd_music_read_word(&reg_val)) break;
+      uint8_t reg = reg_val & 0xFF;
+      uint8_t val = (reg_val >> 8) & 0xFF;
+      
+      portENTER_CRITICAL(&oplMux);
+      OPL3_WriteReg(&oplChip, reg, val);
+      portEXIT_CRITICAL(&oplMux);
+      
+      uint16_t delay = 0;
+      if (!cyd_music_read_word(&delay)) break;
+      cyd_music_seq_time = cyd_music_tick_count + delay;
+    }
+    cyd_music_tick_count++;
+    
+    // Generate one 700 Hz IMF tick worth of audio at the native OPL rate.
+    int16_t samples[4];
+    portENTER_CRITICAL(&oplMux);
+    for (int i = 0; i < kOplSamplesPerTick; ++i) {
+      OPL3_Generate4Ch(&oplChip, samples);
+      oplStereoBuffer[i * 2] = samples[0];
+      oplStereoBuffer[i * 2 + 1] = samples[1];
+    }
+    portEXIT_CRITICAL(&oplMux);
+    
+    for (int i = 0; i < kOplSamplesPerTick; ++i) {
+      int16_t left = oplStereoBuffer[i * 2];
+      int16_t right = oplStereoBuffer[i * 2 + 1];
+      oplMonoBuffer[i] = (left + right) / 2;
+    }
+    
+    // Linearly interpolate from kOplSamplesPerTick (32) to kMusicSamplesPerTick (71)
+    uint32_t step = ((kOplSamplesPerTick - 1) << 16) / (kMusicSamplesPerTick - 1);
+    uint32_t curr = 0;
+    
+    for (int i = 0; i < kMusicSamplesPerTick; ++i) {
+      uint32_t idx = curr >> 16;
+      uint32_t frac = curr & 0xFFFF;
+      int16_t s0 = oplMonoBuffer[idx];
+      int16_t s1 = (idx + 1 < kOplSamplesPerTick) ? oplMonoBuffer[idx + 1] : s0;
+      int32_t interpolated = s0 + (((int32_t)(s1 - s0) * (int32_t)frac) >> 16);
+      
+      int32_t mono = interpolated;
+      int32_t filtered = mono - musicHighPassPrevIn + ((musicHighPassPrevOut * 255) >> 8);
+      musicHighPassPrevIn = mono;
+      musicHighPassPrevOut = filtered;
+      if (filtered < -32768) filtered = -32768;
+      if (filtered > 32767) filtered = 32767;
+
+      cyd_music_ringbuf_push((int16_t)filtered);
+      curr += step;
+    }
+
+    uint64_t end_time = esp_timer_get_time();
+    uint32_t elapsed = (uint32_t)(end_time - start_time);
+    stat_task_count++;
+    stat_task_total_us += elapsed;
+    stat_task_ticks_processed += 1;
+    if (elapsed > stat_task_max_us) {
+      stat_task_max_us = elapsed;
+    }
+
+    uint32_t now = millis();
+    if (now - last_print_ms >= 2000) {
+      last_print_ms = now;
+      uint32_t isr_cnt = stat_isr_count;
+      uint32_t isr_tot = stat_isr_total_us;
+      uint32_t isr_max = stat_isr_max_us;
+      uint32_t starve_cnt = stat_ringbuf_starves;
+      
+      uint32_t task_cnt = stat_task_count;
+      uint32_t task_tot = stat_task_total_us;
+      uint32_t task_max = stat_task_max_us;
+      uint32_t ticks_proc = stat_task_ticks_processed;
+      
+      stat_isr_count = 0;
+      stat_isr_total_us = 0;
+      stat_isr_max_us = 0;
+      stat_ringbuf_starves = 0;
+      
+      stat_task_count = 0;
+      stat_task_total_us = 0;
+      stat_task_max_us = 0;
+      stat_task_ticks_processed = 0;
+      
+      float isr_avg = isr_cnt ? (float)isr_tot / isr_cnt : 0;
+      float task_avg = task_cnt ? (float)task_tot / task_cnt : 0;
+      
+      Serial.printf("[RES MON] ISR: count=%u, avg=%.2f us, max=%u us | Starves=%u\n",
+                    isr_cnt, isr_avg, isr_max, starve_cnt);
+      Serial.printf("[RES MON] Task: count=%u, avg=%.2f us, max=%u us, ticks=%u | Heap: free=%u, largest=%u\n",
+                    task_cnt, task_avg, task_max, ticks_proc,
+                    (unsigned)esp_get_free_heap_size(),
+                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
   }
 }
 
-void ensureOplTask() {
+extern "C" void ensureOplTask() {
   if (oplTaskHandle) return;
   portENTER_CRITICAL(&oplMux);
-  OPL3_Reset(&oplChip, kAudioSampleRate);
+  OPL3_Reset(&oplChip, kOplSampleRate);
   portEXIT_CRITICAL(&oplMux);
   musicRingBufHead = 0;
   musicRingBufTail = 0;
   
-  xTaskCreatePinnedToCore(
+  BaseType_t res = xTaskCreatePinnedToCore(
     cyd_music_task,
     "cyd_music_task",
     3072,
@@ -261,9 +336,15 @@ void ensureOplTask() {
     &oplTaskHandle,
     0 // Pinned to Core 0 (idle radio core)
   );
+  if (res != pdPASS) {
+    Serial.printf("ensureOplTask: FAILED to create cyd_music_task (code %d)\n", (int)res);
+    oplTaskHandle = nullptr;
+  } else {
+    Serial.printf("ensureOplTask: cyd_music_task created successfully (%p)\n", oplTaskHandle);
+  }
 }
 
-void IRAM_ATTR onPcmTimer() {
+void IRAM_ATTR onPcmTimerBody() {
   portENTER_CRITICAL_ISR(&pcmMux);
 
   // Consume next music sample from ring buffer if available
@@ -271,6 +352,8 @@ void IRAM_ATTR onPcmTimer() {
   if (musicRingBufHead != musicRingBufTail) {
     musicSample16 = musicRingBuf[musicRingBufTail];
     musicRingBufTail = (musicRingBufTail + 1) % kMusicRingBufSize;
+  } else if (cyd_music_active) {
+    stat_ringbuf_starves++;
   }
   int musicOffset = (static_cast<int>(musicSample16) * cyd_music_volume * 2) / 32768;
   if (musicOffset < -96) musicOffset = -96;
@@ -386,6 +469,17 @@ void IRAM_ATTR onPcmTimer() {
 
   portEXIT_CRITICAL_ISR(&pcmMux);
   dac_output_voltage(DAC_CHANNEL_2, static_cast<uint8_t>(mixedSample));
+}
+
+void IRAM_ATTR onPcmTimer() {
+  uint64_t start = esp_timer_get_time();
+  onPcmTimerBody();
+  uint32_t elapsed = (uint32_t)(esp_timer_get_time() - start);
+  stat_isr_count++;
+  stat_isr_total_us += elapsed;
+  if (elapsed > stat_isr_max_us) {
+    stat_isr_max_us = elapsed;
+  }
 }
 
 void ensurePcmTimer() {
@@ -640,7 +734,7 @@ extern "C" void cyd_hw_music_volume(uint8_t volume) {
 
 extern "C" void cyd_hw_music_reset_opl(void) {
   portENTER_CRITICAL(&oplMux);
-  OPL3_Reset(&oplChip, kAudioSampleRate);
+  OPL3_Reset(&oplChip, kOplSampleRate);
   portEXIT_CRITICAL(&oplMux);
 }
 

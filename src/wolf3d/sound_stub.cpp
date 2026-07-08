@@ -16,6 +16,10 @@ extern "C" void cyd_trace_sound(int sound, int usedPcm);
 #define AUDIO_DAC_PIN 26
 #endif
 
+// Shared 16384-byte pool: used as banner graphic buffer in menus,
+// and as 2x4096 PCM sound buffers during gameplay (mutually exclusive).
+extern byte *cyd_banner_buffer;
+
 namespace {
 constexpr int kPcmMaxSegments = 2;
 constexpr int kPcSoundBufferSize = 2048;
@@ -117,12 +121,21 @@ void unpinCurrentPcm(uint8_t channel) {
 void ensureToneReady() {
 #if CYD_WOLF_BASIC_SOUND
     if(toneReady) return;
+    // Borrow PCM channel buffers from cyd_banner_buffer (16384 bytes).
+    // Banner graphics and PCM SFX are never needed simultaneously:
+    // - banners only shown on title/menu screens (no SFX fire then)
+    // - SFX fire during gameplay (no banners loaded then)
+    // So the first 8192 bytes (2 x 4096) of the shared buffer serve both.
+    if (!cyd_banner_buffer) {
+        cyd_banner_buffer = (byte *) malloc(16384);
+    }
+    if (!cyd_banner_buffer) {
+        printf("Wolf3D: banner/PCM buffer OOM — skipping SFX\n");
+        return;
+    }
     for (int i = 0; i < kMaxChannels; i++) {
         if (!s_soundBuffer[i]) {
-            s_soundBuffer[i] = (uint8_t *)malloc(4096);
-            if (!s_soundBuffer[i]) {
-                Quit("PCM sound buffer malloc failed");
-            }
+            s_soundBuffer[i] = (uint8_t *)(cyd_banner_buffer + i * 4096);
         }
     }
     cyd_hw_tone_init();
@@ -329,6 +342,10 @@ bool pinDigiForSound(uint8_t channel, soundnames sound) {
     uint32_t firstPage = (uint32_t)(PMSoundStart + startPage);
     uint32_t remaining = declaredLen;
     uint32_t absPage = firstPage;
+    if (!s_soundBuffer[channel]) {
+        // Buffer not available (e.g. OOM during ensureToneReady) — skip silently
+        return false;
+    }
     uint8_t *destPtr = s_soundBuffer[channel];
 
     while(remaining > 0)

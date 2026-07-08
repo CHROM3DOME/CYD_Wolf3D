@@ -1177,7 +1177,31 @@ void CA_CacheGrChunk (int chunk)
     }
 
     cyd_trace_gr_expand(chunk, expanded);
-    grsegs[chunk] = (byte *) malloc(expanded);
+    extern byte *cyd_banner_buffer;
+    if (chunk == GETPSYCHEDPIC || chunk == HIGHSCORESPIC || chunk == C_OPTIONSPIC || chunk == PG13PIC)
+    {
+        if (!cyd_banner_buffer) {
+            // Lazy-allocate shared banner buffer (16384 = max of all banner pics).
+            // These pics are never in memory simultaneously, so one buffer serves all.
+            cyd_banner_buffer = (byte *) malloc(16384);
+            furi_log_print_format(2, "Wolf3D", "Banner buffer alloc: %p heap %u largest %u",
+                                  cyd_banner_buffer, (unsigned)esp_get_free_heap_size(),
+                                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        }
+        if (cyd_banner_buffer) {
+            grsegs[chunk] = cyd_banner_buffer;
+        } else {
+            furi_log_print_format(2, "Wolf3D",
+                "WARNING: OOM banner chunk %i expanded %i heap %u largest %u. Skipping.",
+                chunk, (int)expanded, (unsigned)esp_get_free_heap_size(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            return;
+        }
+    }
+    else
+    {
+        grsegs[chunk] = (byte *) malloc(expanded);
+    }
     if (!grsegs[chunk]) {
         furi_log_print_format(2, "Wolf3D",
             "WARNING: OOM graphics chunk %i expanded %i heap %u largest %u. Skipping.",

@@ -512,10 +512,6 @@ extern "C" void cyd_present_indexed(const uint8_t *pixels, int width, int height
 void setup() {
   // Release Bluetooth controller memory to reclaim SRAM
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
-  
-  // Power down WiFi radio
-  // esp_wifi_stop();
-  // esp_wifi_deinit();
 
   Serial.setTxBufferSize(2048);
   Serial.begin(460800);
@@ -570,21 +566,40 @@ void setup() {
   statusScreen("Wolf3D data: ." + detectedExtension);
   Serial.printf("Wolf3D starting with .%s data, free heap: %u bytes\n",
                 detectedExtension.c_str(), ESP.getFreeHeap());
-  char arg0[] = "wolf3d";
+
+  // Spawn custom game task with a stack of 6144 bytes and run wolf_main there.
+  // This allows us to delete loopTask and reclaim its 8192-byte stack.
+  static String s_ext;
+  s_ext = detectedExtension;
+  xTaskCreatePinnedToCore(
+    [](void *param) {
+      String ext = *(String*)param;
+      char arg0[] = "wolf3d";
 #if CYD_WOLF_DEMO_MODE
-  char arg1[] = "--demotest";
-  char arg2[] = "--nowait";
-  char *argv[] = {arg0, arg1, arg2, nullptr};
-  Serial.printf("CYD demo mode enabled: demo %d, face stream off, free heap: %u bytes\n",
-                CYD_WOLF_DEMO_NUMBER, ESP.getFreeHeap());
-  wolf_main(3, argv);
+      char arg1[] = "--demotest";
+      char arg2[] = "--nowait";
+      char *argv[] = {arg0, arg1, arg2, nullptr};
+      Serial.printf("CYD demo mode enabled: demo %d, face stream off, free heap: %u bytes\n",
+                    CYD_WOLF_DEMO_NUMBER, ESP.getFreeHeap());
+      wolf_main(3, argv);
 #else
-  char *argv[] = {arg0, nullptr};
-  wolf_main(1, argv);
+      char *argv[] = {arg0, nullptr};
+      wolf_main(1, argv);
 #endif
-  fatalScreen("Wolf3D exited");
+      fatalScreen("Wolf3D exited");
+      vTaskDelete(NULL);
+    },
+    "gameTask",
+    6144,
+    &s_ext,
+    5,
+    nullptr,
+    1 // Run on Core 1
+  );
+
+  // Deleting loopTask reclaims its 8192-byte stack immediately
+  vTaskDelete(NULL);
 }
 
 void loop() {
-  delay(1000);
 }

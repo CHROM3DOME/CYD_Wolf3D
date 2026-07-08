@@ -38,6 +38,8 @@ SDL_Surface *screen = NULL;
 unsigned screenPitch;
 
 SDL_Surface *screenBuffer = NULL;
+byte *cyd_screen_pixels = NULL;
+byte *cyd_banner_buffer = NULL;
 unsigned bufferPitch;
 
 SDL_Surface *curSurface = NULL;
@@ -172,6 +174,7 @@ void	VL_SetVGAPlaneMode (void)
 #ifdef WOLF3D_CYD_PORT
     screen = screenBuffer;
     screenBits = 8;
+    cyd_screen_pixels = (byte *)screenBuffer->pixels;
 #else
    // [FG] create intermediate RGBA frame buffer
 

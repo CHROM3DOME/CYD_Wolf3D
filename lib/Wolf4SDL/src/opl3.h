@@ -146,6 +146,7 @@ struct _opl3_chip {
 
     /* OPL3L */
     int32_t rateratio;
+    int32_t pitchscale;
     int32_t samplecnt;
     int16_t oldsamples[4];
     int16_t samples[4];

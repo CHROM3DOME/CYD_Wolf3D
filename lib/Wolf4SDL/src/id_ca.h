@@ -10,7 +10,13 @@
     #define MAPPLANES       2
 #endif
 
-#define UNCACHEGRCHUNK(chunk) {if(grsegs[chunk] && (chunk) != STARTFONT) {free(grsegs[chunk]); grsegs[chunk]=NULL;}}
+extern byte *cyd_banner_buffer;
+#define UNCACHEGRCHUNK(chunk) {if(grsegs[chunk] && (chunk) != STARTFONT) { \
+    if (grsegs[chunk] != cyd_banner_buffer) { \
+        free(grsegs[chunk]); \
+    } \
+    grsegs[chunk]=NULL; \
+}}
 #define UNCACHEAUDIOCHUNK(chunk) {if(audiosegs[chunk]) {free(audiosegs[chunk]); audiosegs[chunk]=NULL;}}
 
 //===========================================================================
