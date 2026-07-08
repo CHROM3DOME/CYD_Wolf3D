@@ -324,9 +324,23 @@ void statusScreen(const String &message) {
 #ifdef LCDWIKI_ES3C28P
   return;
 #endif
-  wolfTft.fillRect(0, 86, 320, 40, TFT_BLACK);
+  static String bootLines[8];
+  static int bootLineCount = 0;
+  
+  if (bootLineCount < 8) {
+    bootLines[bootLineCount++] = message;
+  } else {
+    for (int i = 0; i < 7; i++) {
+      bootLines[i] = bootLines[i+1];
+    }
+    bootLines[7] = message;
+  }
+  
+  wolfTft.fillRect(0, 58, 320, 160, TFT_BLACK);
   wolfTft.setTextColor(TFT_GREEN, TFT_BLACK);
-  wolfTft.drawString(message, 12, 96, 2);
+  for (int i = 0; i < bootLineCount; i++) {
+    wolfTft.drawString(bootLines[i], 12, 58 + i * 18, 2);
+  }
 }
 
 String uppercasePath(String path) {
@@ -554,7 +568,9 @@ void setup() {
   wolfSdSpi.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
   if (!SD.begin(SD_CS, wolfSdSpi, 20000000)) {
     fatalScreen("SD mount failed");
-    return;
+    while (true) {
+      delay(1000);
+    }
   }
 
   String detectedExtension = detectGameData();
@@ -590,7 +606,7 @@ void setup() {
       vTaskDelete(NULL);
     },
     "gameTask",
-    6144,
+    8192,
     &s_ext,
     5,
     nullptr,

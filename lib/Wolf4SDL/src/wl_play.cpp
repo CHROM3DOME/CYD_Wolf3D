@@ -685,6 +685,8 @@ void CheckKeys (void)
         furi_log_print_format(2, "Wolf3D", "Menu open: Free Heap before purge = %u, Largest block = %u",
                               (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(0x00000800));
 
+        int lastoffs = StopMusic();
+
         ClearMemory ();
         CA_ClearSoundCache ();
         CydFreeWallCache ();
@@ -704,6 +706,8 @@ void CheckKeys (void)
         IN_ClearKeysDown ();
         if(viewsize != 21)
             DrawPlayScreen ();
+        if (!startgame && !loadedgame)
+            ContinueMusic (lastoffs);
         if (loadedgame)
             playstate = ex_abort;
         lasttimecount = GetTimeCount();

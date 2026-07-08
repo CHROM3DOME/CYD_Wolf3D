@@ -38,7 +38,8 @@ static bool CydSkipGrChunk(int chunk)
         return true;
     return false;
 }
-static byte *cydMapCompBuffer = NULL;
+extern byte *cyd_banner_buffer;
+#define cydMapCompBuffer cyd_banner_buffer
 #endif
 
 #define THREEBYTEGRSTARTS
@@ -709,17 +710,19 @@ void CAL_SetupAudioFile (void)
 #ifdef WOLF3D_CYD_PORT
 extern "C" void cyd_ca_preallocate(void)
 {
-    if(!cydMapCompBuffer)
+    if(!cyd_banner_buffer)
     {
-        cydMapCompBuffer = (byte *) malloc(10240);
-        CHECKMALLOCRESULT(cydMapCompBuffer);
-        furi_log_print_format(2, "Wolf3D", "Reserved map compressed buffer 10240 bytes");
+        cyd_banner_buffer = (byte *) malloc(12288);
+        CHECKMALLOCRESULT(cyd_banner_buffer);
     }
 }
 #endif
 
 void CA_Startup (void)
 {
+#ifdef WOLF3D_CYD_PORT
+    if (grhandle != -1) return;
+#endif
 #ifdef PROFILE
     unlink ("PROFILE.TXT");
     profilehandle = open("PROFILE.TXT", O_CREAT | O_WRONLY | O_TEXT);
@@ -1182,21 +1185,17 @@ void CA_CacheGrChunk (int chunk)
     if (chunk == GETPSYCHEDPIC || chunk == HIGHSCORESPIC || chunk == C_OPTIONSPIC || chunk == PG13PIC)
     {
         if (!cyd_banner_buffer) {
-            // Lazy-allocate shared banner buffer (16384 = max of all banner pics).
+            // Lazy-allocate shared banner buffer (12288 = max of all banner pics).
             // These pics are never in memory simultaneously, so one buffer serves all.
-            cyd_banner_buffer = (byte *) malloc(16384);
+            cyd_banner_buffer = (byte *) malloc(12288);
             furi_log_print_format(2, "Wolf3D", "Banner buffer alloc: %p heap %u largest %u",
                                   cyd_banner_buffer, (unsigned)esp_get_free_heap_size(),
                                   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         }
-        if (cyd_banner_buffer) {
+        if (cyd_banner_buffer && expanded <= 12288) {
             grsegs[chunk] = cyd_banner_buffer;
         } else {
-            furi_log_print_format(2, "Wolf3D",
-                "WARNING: OOM banner chunk %i expanded %i heap %u largest %u. Skipping.",
-                chunk, (int)expanded, (unsigned)esp_get_free_heap_size(),
-                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-            return;
+            grsegs[chunk] = (byte *) malloc(expanded);
         }
     }
     else
@@ -1509,8 +1508,8 @@ void CA_CacheMap (int mapnum)
             {
                 cyd_ca_preallocate();
             }
-            if (compressed > 10240)
-                Quit("Compressed map plane too large: %i > 10240", (int)compressed);
+            if (compressed > 12288)
+                Quit("Compressed map plane too large: %i > 12288", (int)compressed);
             source = (word *) cydMapCompBuffer;
 #else
             bigbufferseg=malloc(compressed);

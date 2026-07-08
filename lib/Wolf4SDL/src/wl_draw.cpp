@@ -979,7 +979,6 @@ static bool CydScaleDecorCache(int xcenter, int shapenum, unsigned height)
 
     int halfWidth = (int)scale;
     if(halfWidth < 2) halfWidth = 2;
-    if(halfWidth > 30) halfWidth = 30;
 
     int top = viewheight / 2 - (int)scale;
     int left = xcenter - halfWidth;

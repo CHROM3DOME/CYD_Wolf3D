@@ -196,12 +196,14 @@ word SD_SoundPlaying(void) {
     return 0;
 }
 
+#ifndef WOLF3D_CYD_PORT
 void    SD_StartMusic(int) {}
 void    SD_ContinueMusic(int, int) {}
 void    SD_MusicOn(void) {}
 int     SD_MusicOff(void) { return 0; }
 void    SD_FadeOutMusic(void) {}
 boolean SD_MusicPlaying(void) { return false; }
+#endif
 
 boolean SD_SetSoundMode(SDMode mode) {
 #ifdef WOLF3D_CYD_PORT

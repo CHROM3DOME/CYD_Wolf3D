@@ -56,7 +56,7 @@ opl3_chip oplChip;
 TaskHandle_t oplTaskHandle = nullptr;
 
 // Thread-safe lock-free ring buffer for OPL3 music audio stream
-constexpr int kMusicRingBufSize = 2048;
+constexpr int kMusicRingBufSize = 1024;
 volatile int16_t musicRingBuf[kMusicRingBufSize];
 volatile int musicRingBufHead = 0;
 volatile int musicRingBufTail = 0;
@@ -751,12 +751,12 @@ extern "C" void cyd_hw_music_reset_opl(void) {
 
 extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t len) {
   cyd_hw_tone_init();
-  
-  cyd_music_pause_req = true;
-  while (!cyd_music_pause_ack) {
-      vTaskDelay(pdMS_TO_TICKS(1));
+  if (oplTaskHandle != nullptr) {
+    cyd_music_pause_req = true;
+    while (!cyd_music_pause_ack) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
   }
-  
   cyd_music_active = false;
   
   if (cyd_music_fd != -1) {
@@ -808,9 +808,20 @@ extern "C" void cyd_hw_music_start(const char *filename, int32_t start, int32_t 
 }
 
 extern "C" void cyd_hw_music_stop(void) {
+  if (oplTaskHandle != nullptr) {
+    cyd_music_pause_req = true;
+    while (!cyd_music_pause_ack) {
+      vTaskDelay(pdMS_TO_TICKS(1));
+    }
+  }
+
   cyd_music_active = false;
   if (cyd_music_fd != -1) {
     close(cyd_music_fd);
     cyd_music_fd = -1;
+  }
+
+  if (oplTaskHandle != nullptr) {
+    cyd_music_pause_req = false;
   }
 }
